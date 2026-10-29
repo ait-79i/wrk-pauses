@@ -26,7 +26,6 @@ const totalPauseDisplay = document.getElementById('totalPauseMins');
 const clockOutDisplay = document.getElementById('clockOut');
 const timerDisplay = document.getElementById('timer');
 const availableBreakDisplay = document.getElementById('availableBreakDisplay');
-const availLabel = document.getElementById('availLabel');
 const targetOutInput = document.getElementById('targetOut');
 const appWrapper = document.getElementById('appWrapper');
 const limitBadge = document.getElementById('limitBadge');
@@ -34,6 +33,7 @@ const salatName = document.getElementById('salatName');
 const salatTime = document.getElementById('salatTime');
 const salatCountdown = document.getElementById('salatCountdown');
 const salatSection = document.querySelector('.salat');
+const workDurationLabel = document.getElementById('workDurationLabel');
 const timerRow = document.getElementById('timerRow');
 const salatRetryBtn = document.getElementById('salatRetry');
 const fullscreenToggleBtn = document.getElementById('fullscreenToggleBtn');
@@ -54,7 +54,8 @@ const reminderPicker = createReminderPicker({
 const historyStatus = document.getElementById('historyStatus');
 
 // --- INITIALISATION ---
-chrome.storage.local.get([...DAY_KEYS, 'isRamadanMode', 'salatDay', 'salatError', 'salatAlertLead', DAY_RULES_KEY, 'fullscreenPause', 'targetOut'], async (res) => {
+chrome.storage.local.get([...DAY_KEYS, 'isRamadanMode', 'salatDay', 'salatError', 'salatAlertLead', DAY_RULES_KEY, 'fullscreenPause', 'targetOut', 'showSalat'], async (res) => {
+    applySalatVisibility(res.showSalat !== false);
     isRamadanMode = res.isRamadanMode || false;
     applyDayRulesConfig(res[DAY_RULES_KEY]); // règles configurées (ou défauts) avant tout calcul
     salatDay = res.salatDay || null;
@@ -110,6 +111,7 @@ chrome.storage.onChanged.addListener((changes) => {
         applyModeStyles();
         updateUI();
     }
+    if (changes.showSalat !== undefined) applySalatVisibility(changes.showSalat.newValue !== false);
     if (changes.fullscreenPause !== undefined) {
         fullscreenPause = changes.fullscreenPause.newValue !== false;
         updateFullscreenToggleUI();
@@ -344,8 +346,23 @@ function applyModeStyles() {
     const rules = dayRules(isRamadanMode);
     appWrapper.classList.toggle('ramadan-active', isRamadanMode);
     limitBadge.innerText = `Entre ${minsToHM(rules.minOut)} et ${minsToHM(rules.maxOut != null ? rules.maxOut : rules.minOut + 60)}`;
-    const minPauseText = rules.minPauseMins > 0 ? `min ${formatDuration(rules.minPauseMins)} · ` : '';
-    availLabel.innerText = `Pause dispo (${minPauseText}max ${formatDuration(rules.maxPauseMins)})`;
+    workDurationLabel.innerText = formatDuration(rules.workMins);
+}
+
+function applySalatVisibility(show) {
+    salatSection.hidden = !show;
+}
+
+// Application Windows : la fenêtre prend la hauteur du contenu (bandeau prière masqué,
+// pauses ajoutées, formulaire ouvert…). Absent dans l'extension de navigateur.
+if (window.psSystem && window.psSystem.fitHeight && 'ResizeObserver' in window) {
+    let fitFrame = 0;
+    new ResizeObserver(() => {
+        cancelAnimationFrame(fitFrame);
+        fitFrame = requestAnimationFrame(() => {
+            window.psSystem.fitHeight(Math.ceil(appWrapper.getBoundingClientRect().height));
+        });
+    }).observe(appWrapper);
 }
 
 function formatPauseDur(p) {
@@ -448,7 +465,7 @@ function updateUI() {
 
     totalPauseDisplay.innerText = `Total: ${formatDuration(day.totalPauseMins)}`;
 
-    // Pause dispo pour la sortie visée (arrivée + travail + capital pause, moins les pauses prises)
+    // Pause dispo pour la sortie visée (sortie − arrivée − travail, moins les pauses prises)
     const targetOutMins = targetOut ? timeToMins(targetOut) : dayRules(isRamadanMode).minOut;
     if (document.activeElement !== targetOutInput) targetOutInput.value = minsToHM(targetOutMins);
     const availMins = availablePauseForTarget({

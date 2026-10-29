@@ -282,10 +282,13 @@ body:has(.ramadan-active) {
     min-width: 0;
 }
 
+.salat[hidden] {
+    display: none;
+}
+
 .salat-caption {
     font-size: 12.5px;
     color: rgba(255, 255, 255, 0.78);
-    white-space: nowrap;
 }
 
 .salat-name,
@@ -299,7 +302,7 @@ body:has(.ramadan-active) {
 }
 
 .salat-countdown {
-    font-size: 30px;
+    font-size: clamp(24px, 7vw, 34px);
     font-weight: 600;
     line-height: 1.1;
     letter-spacing: -0.01em;
@@ -312,11 +315,24 @@ body:has(.ramadan-active) {
     z-index: 1;
     margin: 0;
     font-family: var(--font-kufi);
-    font-size: 34px;
+    font-size: clamp(24px, 7.5vw, 38px);
     font-weight: 700;
     line-height: 1.2;
     color: var(--saffron);
     white-space: nowrap;
+}
+
+/* Fenêtre étroite : la devise passe sous le compte à rebours */
+@media (max-width: 400px) {
+    .salat {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+    }
+
+    .salat-title {
+        align-self: flex-end;
+    }
 }
 
 .salat.is-unavailable .salat-countdown {
@@ -336,9 +352,9 @@ body:has(.ramadan-active) {
 .field-card {
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
     gap: 6px;
-    padding: 10px 12px;
+    min-width: 0;
+    padding: 12px 14px;
     border: 1px solid var(--line);
     border-radius: var(--radius-md);
     background: var(--surface);
@@ -358,7 +374,7 @@ body:has(.ramadan-active) {
 }
 
 .big-value {
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 700;
     line-height: 1.15;
     letter-spacing: -0.01em;
@@ -371,14 +387,32 @@ body:has(.ramadan-active) {
     color: var(--pomegranate);
 }
 
-.target-out {
+/* Pied de carte aligné entre les deux cartes : durée de travail / sortie visée */
+.field-foot {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 6px;
-    font-size: 11px;
+    min-height: 30px;
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 1px dashed var(--line);
+    font-size: 12px;
     font-weight: 500;
     color: var(--muted);
+}
+
+.field-foot strong {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+}
+
+/* Fenêtre étroite : les deux cartes s'empilent */
+@media (max-width: 400px) {
+    .day-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .time-input--sm {
@@ -413,10 +447,15 @@ body:has(.ramadan-active) {
     border-color: var(--focus);
 }
 
+/* Heure d'arrivée : même gabarit que la valeur « Pause dispo » */
 .time-input--lg {
-    align-self: flex-start;
-    font-size: 20px;
-    padding: 2px 8px;
+    align-self: stretch;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.15;
+    padding: 0 6px;
+    margin-left: -6px;
+    background: transparent;
 }
 
 .time-input::-webkit-calendar-picker-indicator {

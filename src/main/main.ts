@@ -84,8 +84,8 @@ function createMainWindow(): void {
     mainWindow = new BrowserWindow({
         width: 480,
         height: 860,
-        minWidth: 420,
-        minHeight: 600,
+        minWidth: 360,
+        minHeight: 300,
         show: false,
         title: 'Pause',
         icon: path.join(ROOT_DIR, 'build', 'icon.png'),
@@ -513,6 +513,24 @@ function registerIpc(): void {
         if (/history\.html$/.test(String(url))) return openHistoryWindow();
         if (/settings\.html$/.test(String(url))) return openSettingsWindow();
         return shell.openExternal(String(url));
+    });
+
+    // Hauteur de la fenêtre principale = hauteur du contenu, bornée par l'écran
+    ipcMain.on('window:fitHeight', (e, height) => {
+        if (!mainWindow || e.sender !== mainWindow.webContents) return;
+        if (mainWindow.isMaximized() || mainWindow.isFullScreen()) return;
+        const h = Math.ceil(Number(height));
+        if (!Number.isFinite(h) || h <= 0) return;
+        const { workArea } = screen.getDisplayMatching(mainWindow.getBounds());
+        const winH = mainWindow.getSize()[1];
+        const [contentW, contentH] = mainWindow.getContentSize();
+        const maxContentH = workArea.height - (winH - contentH);
+        const target = Math.min(h, maxContentH);
+        if (target !== contentH) mainWindow.setContentSize(contentW, target);
+        // Si la fenêtre déborde en bas de l'écran, on la remonte
+        const b = mainWindow.getBounds();
+        const overflow = b.y + b.height - (workArea.y + workArea.height);
+        if (overflow > 0) mainWindow.setPosition(b.x, Math.max(workArea.y, b.y - overflow));
     });
 
     ipcMain.handle('system:getAutoLaunch', () => readAutoLaunch());

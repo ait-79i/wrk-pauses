@@ -8,17 +8,15 @@ var MAX_PAUSES = 30;
 
 // Règles par défaut (minutes depuis minuit) :
 //   workMins     : durée de travail effectif
-//   minPauseMins : pause minimum obligatoire (indicative : ne décale la sortie qu'une fois prise)
-//   maxPauseMins : capital pause du règlement (ex. 30 min obligatoires + 30 min optionnelles)
 //   minOut/maxOut: bornes de l'heure de sortie réelle
 // L'utilisateur peut tout remplacer depuis la page Réglages (clé de stockage dayRulesConfig).
 var DEFAULT_DAY_RULES = {
-    normal: { workMins: 480, minPauseMins: 30, maxPauseMins: 60, minOut: 1020, maxOut: 1080 }, // 8h travail, 30m pause min obligatoire, 1h pause max, sortie 17:00–18:00
-    ramadan: { workMins: 420, minPauseMins: 30, maxPauseMins: 60, minOut: 930, maxOut: 990 }   // 7h travail, 30m pause min obligatoire, 1h pause max, sortie 15:30–16:30
+    normal: { workMins: 480, minOut: 1020, maxOut: 1080 }, // 8h travail, sortie 17:00–18:00
+    ramadan: { workMins: 420, minOut: 930, maxOut: 990 }   // 7h travail, sortie 15:30–16:30
 };
 
 var DAY_RULES_KEY = 'dayRulesConfig';
-var DAY_RULE_FIELDS = ['workMins', 'minPauseMins', 'maxPauseMins', 'minOut', 'maxOut'];
+var DAY_RULE_FIELDS = ['workMins', 'minOut', 'maxOut'];
 
 // Copie active, mutable : la configuration de l'utilisateur y est fusionnée par applyDayRulesConfig.
 var DAY_RULES = {
@@ -53,7 +51,7 @@ function pauseMins(p) {
     return timeToMins(p.end) - timeToMins(p.start);
 }
 
-/** Calculs de la journée (pur) : total des pauses, capital restant, sortie */
+/** Calculs de la journée (pur) : total des pauses, sortie */
 function computeDay({ clockIn, dayPauses, activeSecs, ramadan }) {
     const rules = dayRules(ramadan);
     const closedMins = (dayPauses || []).reduce((sum, p) => {
@@ -63,30 +61,26 @@ function computeDay({ clockIn, dayPauses, activeSecs, ramadan }) {
     const totalPauseMins = closedMins + (activeSecs || 0) / 60;
     const arrivalMins = timeToMins(clockIn);
 
-    // Seules les pauses réellement prises décalent la sortie : la pause minimum
-    // obligatoire n'est jamais ajoutée tant qu'elle n'a pas été consommée.
+    // Seules les pauses réellement prises décalent la sortie.
     let departureMins = arrivalMins + rules.workMins + totalPauseMins;
     departureMins = Math.max(departureMins, rules.minOut);
     if (rules.maxOut !== null) departureMins = Math.min(departureMins, rules.maxOut);
 
     return {
         totalPauseMins,
-        // Capital pause : plafond du règlement moins ce qui a déjà été pris (indépendant de l'arrivée)
-        remainingBreakMins: rules.maxPauseMins - totalPauseMins,
         departureMins: Math.floor(departureMins)
     };
 }
 
 /**
  * Pause encore disponible pour sortir à l'heure visée (targetOutMins) : temps de présence
- * au-delà du travail effectif depuis l'arrivée, plafonné au capital pause du règlement,
- * moins les pauses déjà prises (fermées + pause en cours). Négatif si l'objectif est dépassé.
+ * au-delà du travail effectif depuis l'arrivée, moins les pauses déjà prises
+ * (fermées + pause en cours). Négatif si l'objectif est dépassé.
  */
 function availablePauseForTarget({ clockIn, dayPauses, activeSecs, ramadan, targetOutMins }) {
     const rules = dayRules(ramadan);
     const { totalPauseMins } = computeDay({ clockIn, dayPauses, activeSecs, ramadan });
-    const allowedMins = Math.min(targetOutMins - timeToMins(clockIn) - rules.workMins, rules.maxPauseMins);
-    return allowedMins - totalPauseMins;
+    return targetOutMins - timeToMins(clockIn) - rules.workMins - totalPauseMins;
 }
 
 /** Ajoute la pause en cours à la liste du jour (liste inchangée si la limite est atteinte) */

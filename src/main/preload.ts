@@ -100,7 +100,9 @@ const psHistory = {
 // Réglages système propres à l'application Windows (démarrage automatique)
 const psSystem = {
     getAutoLaunch: () => ipcRenderer.invoke('system:getAutoLaunch'),
-    setAutoLaunch: (on: boolean) => ipcRenderer.invoke('system:setAutoLaunch', Boolean(on))
+    setAutoLaunch: (on: boolean) => ipcRenderer.invoke('system:setAutoLaunch', Boolean(on)),
+    // Ajuste la hauteur de la fenêtre au contenu (fenêtre principale uniquement)
+    fitHeight: (height: number) => ipcRenderer.send('window:fitHeight', Number(height))
 };
 
 // Synchronisation (Historique & Configuration)

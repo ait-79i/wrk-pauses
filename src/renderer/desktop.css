@@ -6,8 +6,8 @@ body {
     min-height: 100vh;
 }
 
+/* Pas de min-height sur .app : sa hauteur réelle sert à ajuster la fenêtre au contenu */
 .app {
     max-width: 476px;
     margin: 0 auto;
-    min-height: 100vh;
 }
