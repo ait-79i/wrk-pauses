@@ -1,0 +1,61 @@
+{
+  "name": "pause-salat-desktop",
+  "productName": "Pause",
+  "version": "1.0.11",
+  "description": "Suivez votre journée de travail, vos pauses et les horaires de prière. Application de bureau Windows.",
+  "main": "dist/main/main.js",
+  "author": "8hqi",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/8hqi/pause-desktop.git"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --win nsis --publish never",
+    "dist:portable": "npm run build && electron-builder --win portable --publish never"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "sql.js": "^1.14.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/sql.js": "^1.4.11",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "typescript": "^7.0.2"
+  },
+  "build": {
+    "appId": "com.8hqi.pause-salat",
+    "productName": "Pause",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/main/**/*",
+      "src/renderer/**/*",
+      "src/shared/**/*",
+      "build/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Pause",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
+    }
+  }
+}
