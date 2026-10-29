@@ -1,7 +1,7 @@
 {
   "name": "pause-salat-desktop",
   "productName": "Pause",
-  "version": "1.0.11",
+  "version": "1.0.0",
   "description": "Suivez votre journée de travail, vos pauses et les horaires de prière. Application de bureau Windows.",
   "main": "dist/main/main.js",
   "author": "8hqi",
@@ -15,7 +15,11 @@
     "typecheck": "tsc --noEmit",
     "start": "npm run build && electron .",
     "dist": "npm run build && electron-builder --win nsis --publish never",
-    "dist:portable": "npm run build && electron-builder --win portable --publish never"
+    "dist:portable": "npm run build && electron-builder --win portable --publish never",
+    "dist:all": "npm run build && electron-builder --win nsis portable --publish never",
+    "release:patch": "npm version patch && git push --follow-tags",
+    "release:minor": "npm version minor && git push --follow-tags",
+    "release:major": "npm version major && git push --follow-tags"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
