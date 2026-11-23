@@ -25,6 +25,7 @@ function createReminderPicker({ trigger, label, menu, choices, onChange }) {
 
         for (const opt of options) {
             if (opt.value === null) {
+                menu.appendChild(buildCustomRow());
                 const sep = document.createElement('div');
                 sep.className = 'reminder-sep';
                 sep.setAttribute('role', 'separator');
@@ -43,6 +44,59 @@ function createReminderPicker({ trigger, label, menu, choices, onChange }) {
         }
     }
 
+    // Durée personnalisée : saisie libre en minutes (1 à 120)
+    const CUSTOM_MIN = 1;
+    const CUSTOM_MAX = 120;
+    let customInput = null;
+    let customRow = null;
+
+    function buildCustomRow() {
+        customRow = document.createElement('div');
+        customRow.className = 'reminder-option reminder-custom';
+        customRow.id = 'reminder-opt-custom';
+        customRow.setAttribute('role', 'option');
+        customRow.dataset.value = 'custom';
+        customRow.innerHTML =
+            '<span class="reminder-option-text">Personnalisé</span>' +
+            '<span class="reminder-custom-field">' +
+            `<input type="number" class="reminder-custom-input" min="${CUSTOM_MIN}" max="${CUSTOM_MAX}" step="1" inputmode="numeric" aria-label="Minutes avant la prière">` +
+            '<span class="reminder-custom-unit">min</span>' +
+            '<button type="button" class="reminder-custom-ok" aria-label="Valider le rappel personnalisé">OK</button>' +
+            '</span>' + CHECK_SVG;
+        customInput = customRow.querySelector('.reminder-custom-input');
+
+        const submit = () => {
+            const n = Math.round(Number(customInput.value));
+            if (!Number.isFinite(n) || n < CUSTOM_MIN || n > CUSTOM_MAX) {
+                customInput.classList.add('is-invalid');
+                customInput.focus();
+                return;
+            }
+            customInput.classList.remove('is-invalid');
+            select(n);
+        };
+
+        customRow.addEventListener('click', (e) => {
+            if (e.target.closest('.reminder-custom-ok')) return submit();
+            if (e.target !== customInput) customInput.focus();
+        });
+        customRow.addEventListener('mousemove', () => setActive(customRow));
+        customInput.addEventListener('input', () => customInput.classList.remove('is-invalid'));
+        customInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                submit();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                menu.hidePopover();
+            }
+            e.stopPropagation(); // la saisie ne doit pas déplacer la sélection du menu
+        });
+        return customRow;
+    }
+
+    const isCustom = (value) => value !== null && !choices.includes(value);
+
     const items = () => [...menu.querySelectorAll('.reminder-option')];
 
     function setActive(item) {
@@ -52,14 +106,19 @@ function createReminderPicker({ trigger, label, menu, choices, onChange }) {
     }
 
     function render() {
-        const selected = options.find((o) => o.value === current) || options[options.length - 1];
-        label.textContent = current === null ? 'Rappel désactivé' : `Rappel ${selected.text}`;
+        label.textContent = current === null ? 'Rappel désactivé' : `Rappel ${current} min avant`;
         trigger.classList.toggle('is-off', current === null);
+        const selectedId = isCustom(current) ? customRow.id : optionId(current);
         items().forEach((el) => {
-            const isSelected = el.id === optionId(current);
-            el.setAttribute('aria-selected', String(isSelected));
+            el.setAttribute('aria-selected', String(el.id === selectedId));
         });
+        if (document.activeElement !== customInput) {
+            customInput.value = isCustom(current) ? String(current) : '';
+            customInput.placeholder = String(current ?? DEFAULT_CUSTOM_PLACEHOLDER);
+        }
     }
+
+    const DEFAULT_CUSTOM_PLACEHOLDER = 25;
 
     function position() {
         const r = trigger.getBoundingClientRect();
@@ -82,7 +141,7 @@ function createReminderPicker({ trigger, label, menu, choices, onChange }) {
         trigger.setAttribute('aria-expanded', String(isOpen));
         if (isOpen) {
             position();
-            setActive(menu.querySelector(`#${optionId(current)}`) || items()[0]);
+            setActive(isCustom(current) ? customRow : (menu.querySelector(`#${optionId(current)}`) || items()[0]));
             menu.focus({ preventScroll: true });
         } else if (menu.contains(document.activeElement) || document.activeElement === document.body) {
             trigger.focus({ preventScroll: true });
@@ -99,7 +158,9 @@ function createReminderPicker({ trigger, label, menu, choices, onChange }) {
         } else if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             const active = list[i];
-            if (active) select(active.dataset.value === 'off' ? null : Number(active.dataset.value));
+            if (!active) return;
+            if (active === customRow) customInput.focus();
+            else select(active.dataset.value === 'off' ? null : Number(active.dataset.value));
         } else if (e.key === 'Tab') {
             menu.hidePopover();
         }

@@ -1132,6 +1132,72 @@ body:has(.ramadan-active) {
     visibility: visible;
 }
 
+.reminder-custom {
+    gap: 8px;
+    cursor: default;
+}
+
+.reminder-custom-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.reminder-custom-input {
+    width: 44px;
+    padding: 3px 5px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font: inherit;
+    font-size: 12.5px;
+    text-align: center;
+    color: inherit;
+    background: var(--field-bg);
+    -moz-appearance: textfield;
+}
+
+.reminder-custom-input::-webkit-outer-spin-button,
+.reminder-custom-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.reminder-custom-input:focus {
+    outline: none;
+    border-color: var(--majorelle);
+}
+
+.reminder-custom-input.is-invalid {
+    border-color: #d93a3a;
+}
+
+.reminder-custom-unit {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.reminder-custom-ok {
+    padding: 3px 8px;
+    border: none;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--majorelle);
+    cursor: pointer;
+}
+
+.ramadan-active .reminder-custom-input:focus {
+    border-color: var(--saffron);
+}
+
+.ramadan-active .reminder-custom-ok {
+    color: #1c1f66;
+    background: var(--saffron);
+}
+
 .reminder-sep {
     height: 1px;
     margin: 4px 6px;
