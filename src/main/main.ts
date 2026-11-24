@@ -1,22 +1,25 @@
 // Processus principal Pause (Windows).
 // Rôles : fenêtre principale + icône de la zone de notification, fenêtres de pause
 // plein écran sur chaque écran, fenêtre de rappel de prière, récupération des horaires,
-// et base d'historique SQLite (fichier).
+// base d'historique SQLite (fichier), discussion de l'équipe et notifications Windows.
 
-import { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, shell, Display } from 'electron';
+import { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, shell, Display, Notification, powerMonitor } from 'electron';
 import * as path from 'path';
+import { pathToFileURL } from 'url';
 import './shared'; // charge salat-core, day-core, salat-card comme globales
 import { Store } from './store';
 import { createHistory, HistoryManager } from './history';
 import { SyncManager } from './sync';
+import { TeamManager } from './team';
 import { generateXlsx, generateCsv } from './exporter';
-import { StoreChanges } from './types';
+import { StoreChanges, TeamNotice } from './types';
 
 const ROOT_DIR = path.join(__dirname, '..', '..');
 const RENDERER = path.join(ROOT_DIR, 'src', 'renderer');
 const DAY_KEYS = ['clockIn', 'pauses', 'isPaused', 'pauseStartTime', 'workDate'];
 const REFRESH_PERIOD_MS = 15 * 60 * 1000;
 const AUTOSTART_OPTIONS = { path: process.execPath, args: ['--autostart'] };
+const APP_USER_MODEL_ID = 'com.8hqi.pause-salat'; // = build.appId : notifications Windows
 
 // Une seule instance : relancer l'application ne fait que ramener la fenêtre au premier plan
 if (!app.requestSingleInstanceLock()) {
@@ -27,11 +30,15 @@ if (!app.requestSingleInstanceLock()) {
 let store: Store;
 let history: HistoryManager;
 let syncManager: SyncManager;
+let teamManager: TeamManager;
 
 let mainWindow: BrowserWindow | null = null;
 let historyWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 let alertWindow: BrowserWindow | null = null;
+let chatWindow: BrowserWindow | null = null;
+// Notifications affichées : gardées en mémoire pour que le clic reste actif
+const liveNotices = new Set<Notification>();
 const pauseWindows = new Map<string, BrowserWindow>(); // idÉcran -> BrowserWindow
 let salatInflight: Promise<any> | null = null;
 let alertTimer: NodeJS.Timeout | null = null;
@@ -45,6 +52,10 @@ app.whenReady().then(() => {
     store = new Store(path.join(userData, 'state.json'));
     history = createHistory(path.join(userData, 'history.sqlite'), broadcastHistoryChanged);
     syncManager = new SyncManager(store, history);
+    teamManager = new TeamManager(store, userData);
+    teamManager.on('event', broadcastTeamEvent);
+    teamManager.on('notify', showTeamNotice);
+    app.setAppUserModelId(APP_USER_MODEL_ID);
 
     if (store.value('salatAlertLead') === undefined) {
         store.set({ salatAlertLead: global.DEFAULT_ALERT_LEAD_MINS });
@@ -60,6 +71,9 @@ app.whenReady().then(() => {
 
     // Démarrage du planificateur de synchronisation automatique
     syncManager.startSchedule();
+    teamManager.start();
+    // Sortie de veille : la connexion temps réel est souvent morte sans le savoir
+    powerMonitor.on('resume', () => teamManager.reconnectNow());
 
     ensureSalatDay().then(scheduleAlert).then(dispatchAlert);
     setInterval(() => ensureSalatDay().then(scheduleAlert).then(dispatchAlert), REFRESH_PERIOD_MS);
@@ -67,12 +81,23 @@ app.whenReady().then(() => {
 });
 
 app.on('second-instance', () => showMainWindow());
+
+// Aucune fenêtre ne quitte les pages de l'application (lien ou fichier glissé, window.open) :
+// le pont du preload ne doit jamais tourner sur une page distante.
+app.on('web-contents-created', (_e, contents) => {
+    const local = pathToFileURL(RENDERER).href;
+    contents.on('will-navigate', (e, url) => {
+        if (!url.startsWith(`${local}/`)) e.preventDefault();
+    });
+    contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+});
 app.on('window-all-closed', () => {
     // Vit dans la zone de notification : ne pas quitter l'application
 });
 app.on('before-quit', () => {
     quitting = true;
     if (syncManager) syncManager.stopSchedule();
+    if (teamManager) teamManager.stop();
 });
 app.on('will-quit', () => {
     if (tray && !tray.isDestroyed()) tray.destroy();
@@ -127,7 +152,7 @@ function createTray(): void {
     const fallbackPath = path.join(RENDERER, 'icon.png');
     const img = nativeImage.createFromPath(iconPath);
     tray = new Tray(img.isEmpty() ? nativeImage.createFromPath(fallbackPath) : img);
-    tray.setToolTip('Pause');
+    updateTrayTooltip();
 
     const menu = Menu.buildFromTemplate([
         { label: 'Ouvrir', click: showMainWindow },
@@ -141,6 +166,7 @@ function createTray(): void {
             ]
         },
         { type: 'separator' },
+        { label: 'Discussion', click: () => openChatWindow() },
         { label: 'Historique', click: openHistoryWindow },
         { label: 'Réglages', click: openSettingsWindow },
         { type: 'separator' },
@@ -162,6 +188,75 @@ function createTray(): void {
     tray.setContextMenu(menu);
     tray.on('click', showMainWindow);
     tray.on('double-click', showMainWindow);
+}
+
+/** Infobulle de l'icône : nombre de messages non lus de la discussion */
+function updateTrayTooltip(): void {
+    if (!tray || tray.isDestroyed()) return;
+    const unread = Number(store?.value('teamUnread')) || 0;
+    tray.setToolTip(unread > 0 ? `Pause — ${unread} message${unread > 1 ? 's' : ''} non lu${unread > 1 ? 's' : ''}` : 'Pause');
+}
+
+// ---------------------------------------------------------------- Discussion de l'équipe (fenêtre)
+
+function openChatWindow(channel?: string | null): void {
+    if (chatWindow) {
+        if (chatWindow.isMinimized()) chatWindow.restore();
+        chatWindow.show();
+        chatWindow.focus();
+        if (channel) chatWindow.webContents.send('chat:openChannel', channel);
+        return;
+    }
+    chatWindow = new BrowserWindow({
+        width: 420,
+        height: 640,
+        minWidth: 340,
+        minHeight: 420,
+        title: 'Discussion — Pause',
+        icon: path.join(ROOT_DIR, 'build', 'icon.png'),
+        autoHideMenuBar: true,
+        backgroundColor: store.value('isRamadanMode') ? '#0f1133' : '#f1f2f7',
+        webPreferences: {
+            // Seule fenêtre qui affiche le texte d'autres personnes : isolée, pont réduit (chat-preload.ts)
+            preload: path.join(__dirname, 'chat-preload.js'),
+            contextIsolation: true,
+            sandbox: true,
+            nodeIntegration: false
+        }
+    });
+    chatWindow.setMenuBarVisibility(false);
+    chatWindow.loadFile(path.join(RENDERER, 'chat.html'), channel ? { query: { channel } } : undefined);
+    chatWindow.on('closed', () => {
+        chatWindow = null;
+    });
+}
+
+/** Évènements temps réel relayés aux fenêtres (discussion, panneau d'équipe) */
+function broadcastTeamEvent(event: unknown): void {
+    for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send('team:event', event);
+    }
+}
+
+function showTeamNotice(n: TeamNotice): void {
+    if (!Notification.isSupported()) return;
+    const notice = new Notification({
+        title: n.title,
+        body: n.body,
+        icon: path.join(ROOT_DIR, 'build', 'icon.png'),
+        silent: false
+    });
+    const release = () => liveNotices.delete(notice);
+    notice.on('click', () => {
+        release();
+        if (n.target === 'chat') openChatWindow(n.channel ?? null);
+        else showMainWindow();
+    });
+    notice.on('close', release);
+    liveNotices.add(notice);
+    // Windows retire la notification du centre de notifications au bout d'un moment
+    setTimeout(release, 10 * 60_000).unref?.();
+    notice.show();
 }
 
 // ---------------------------------------------------------------- Historique (fenêtre)
@@ -253,7 +348,7 @@ async function loadSalatDay(force: boolean): Promise<any> {
 // ---------------------------------------------------------------- Rappel de prière (fenêtre)
 
 function currentAlert(): any {
-    return global.pendingSalatAlert(store.get(['salatDay', 'salatAlertLead', 'salatDismissedKey']));
+    return global.pendingSalatAlert(store.get(global.SALAT_ALERT_KEYS));
 }
 
 function scheduleAlert(): void {
@@ -262,14 +357,17 @@ function scheduleAlert(): void {
         alertTimer = null;
     }
     const day = store.value('salatDay');
-    const leadRaw = store.value('salatAlertLead');
-    const lead = leadRaw === undefined ? global.DEFAULT_ALERT_LEAD_MINS : leadRaw;
-    if (lead == null || !day || day.date !== global.moroccoDateKey()) return;
-
+    const { at, lead } = global.salatAlertSettings(store.get(['salatAlertLead', 'salatAlertAt']));
+    const today = global.moroccoDateKey();
     const nowSecs = global.moroccoNowSecs();
-    const nextStart = global.PRAYER_ORDER
-        .map((k) => ((day.times[k] ?? 0) - lead) * 60)
-        .find((startSecs) => startSecs > nowSecs);
+
+    // Débuts des rappels : rappel personnel (heure fixe ou avance) + groupes choisis dans l'équipe
+    const starts: number[] = global.teamAlertStarts(store.value('teamDay'), today);
+    if (day && day.date === today) {
+        if (at != null) starts.push(at * 60);
+        else if (lead != null) starts.push(...global.PRAYER_ORDER.map((k) => ((day.times[k] ?? 0) - lead) * 60));
+    }
+    const nextStart = starts.filter((s) => s > nowSecs).sort((a, b) => a - b)[0];
     if (nextStart === undefined) return;
     const delayMs = (nextStart - nowSecs) * 1000;
     alertTimer = setTimeout(() => {
@@ -291,15 +389,15 @@ function dispatchAlert(): void {
         alertWindow.showInactive();
         return;
     }
-    const { workArea } = screen.getPrimaryDisplay();
-    const width = 560;
-    const height = 500;
+    // Rappel en plein écran sur l'écran principal (couvre aussi la barre des tâches)
+    const { bounds } = screen.getPrimaryDisplay();
     alertWindow = new BrowserWindow({
-        width,
-        height,
-        x: Math.round(workArea.x + (workArea.width - width) / 2),
-        y: Math.round(workArea.y + (workArea.height - height) / 2),
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
         frame: false,
+        fullscreen: true,
         resizable: false,
         alwaysOnTop: true,
         skipTaskbar: false,
@@ -314,6 +412,7 @@ function dispatchAlert(): void {
     });
     alertWindow.setAlwaysOnTop(true, 'screen-saver');
     alertWindow.loadFile(path.join(RENDERER, 'alert.html'));
+    alertWindow.once('ready-to-show', () => alertWindow?.focus());
     alertWindow.on('closed', () => {
         alertWindow = null;
     });
@@ -487,13 +586,14 @@ function onStoreChanged(changes: StoreChanges): void {
         if (!w.isDestroyed()) w.webContents.send('store-changed', changes);
     }
 
+    if (changes.teamUnread !== undefined) updateTrayTooltip();
     if (changes[global.DAY_RULES_KEY]) global.applyDayRulesConfig(store.value(global.DAY_RULES_KEY));
     if (changes.isPaused !== undefined || changes.fullscreenPause !== undefined) dispatchPauseScreens();
-    if (changes.salatDay || changes.salatAlertLead) scheduleAlert();
-    if (changes.salatDay || changes.salatAlertLead || changes.salatDismissedKey) dispatchAlert();
+    if (changes.salatDay || changes.salatAlertLead || changes.salatAlertAt || changes.teamDay !== undefined) scheduleAlert();
+    if (changes.salatDay || changes.salatAlertLead || changes.salatAlertAt || changes.teamDay !== undefined || changes.salatDismissedKey) dispatchAlert();
 
     // Enregistrement d'un timestamp de modification de config pour la synchronisation
-    if (changes[global.DAY_RULES_KEY] || changes.isRamadanMode || changes.salatAlertLead || changes.autoLaunch || changes.fullscreenPause !== undefined) {
+    if (changes[global.DAY_RULES_KEY] || changes.isRamadanMode || changes.salatAlertLead || changes.salatAlertAt || changes.salatAlertMessage !== undefined || changes.autoLaunch || changes.fullscreenPause !== undefined) {
         store.set({ syncConfigUpdatedAt: Date.now() });
         if (syncManager && syncManager.getConfig().enabled && syncManager.getConfig().autoSync) {
             setTimeout(() => syncManager.sync().catch(() => {}), 3000);
@@ -512,7 +612,15 @@ function registerIpc(): void {
     ipcMain.handle('tabs:create', (_e, url) => {
         if (/history\.html$/.test(String(url))) return openHistoryWindow();
         if (/settings\.html$/.test(String(url))) return openSettingsWindow();
-        return shell.openExternal(String(url));
+        // Seulement des pages web sécurisées : jamais file:, ni un autre protocole du système
+        let target: URL;
+        try {
+            target = new URL(String(url));
+        } catch {
+            return undefined;
+        }
+        if (target.protocol !== 'https:') return undefined;
+        return shell.openExternal(target.href);
     });
 
     // Hauteur de la fenêtre principale = hauteur du contenu, bornée par l'écran
@@ -532,6 +640,35 @@ function registerIpc(): void {
         const overflow = b.y + b.height - (workArea.y + workArea.height);
         if (overflow > 0) mainWindow.setPosition(b.x, Math.max(workArea.y, b.y - overflow));
     });
+
+    // Équipe de prière : les erreurs remontent à la fenêtre avec leur message
+    const teamCall = (fn: () => Promise<unknown>) => fn().then(
+        (value) => ({ ok: true, value }),
+        (err: any) => ({ ok: false, message: String(err?.message || err), code: err?.code ?? 'error' })
+    );
+    ipcMain.handle('team:join', (_e, code, name) => teamCall(() => teamManager.join(String(code), String(name))));
+    ipcMain.handle('team:transfer', (_e, code) => teamCall(() => teamManager.transfer(String(code))));
+    ipcMain.handle('team:leave', () => teamCall(() => teamManager.leave()));
+    ipcMain.handle('team:choose', (_e, date, prayer, groupId) =>
+        teamCall(() => teamManager.choose(String(date), String(prayer), groupId === null ? null : Number(groupId))));
+    ipcMain.handle('team:setUsual', (_e, prayer, groupId) =>
+        teamCall(() => teamManager.setUsual(String(prayer), groupId === null ? null : Number(groupId))));
+    ipcMain.handle('team:refresh', () => teamCall(() => teamManager.refresh(true)));
+    ipcMain.handle('team:publish', (_e, date, prayer, slots) => teamCall(() => teamManager.publish(
+        String(date), String(prayer),
+        (Array.isArray(slots) ? slots : []).map((s: any) => ({ groupId: s?.groupId == null ? null : Number(s.groupId), time: String(s?.time ?? '') }))
+    )));
+    ipcMain.handle('team:openChat', (_e, channel) => { openChatWindow(channel ? String(channel) : null); });
+
+    // Discussion : la fenêtre ne voit jamais la clé de l'appareil
+    ipcMain.handle('chat:channels', () => teamCall(() => teamManager.channels()));
+    ipcMain.handle('chat:messages', (_e, channel, before) =>
+        teamCall(() => teamManager.messages(String(channel), before == null ? null : Number(before))));
+    ipcMain.handle('chat:post', (_e, channel, body, kind, replyToId) => teamCall(() => teamManager.post(
+        String(channel), String(body), kind === 'ANNOUNCEMENT' ? 'ANNOUNCEMENT' : 'TEXT', replyToId == null ? null : Number(replyToId))));
+    ipcMain.handle('chat:remove', (_e, id) => teamCall(() => teamManager.remove(Number(id))));
+    ipcMain.handle('chat:react', (_e, id, emoji) => teamCall(() => teamManager.react(Number(id), String(emoji))));
+    ipcMain.handle('chat:markRead', (_e, channel, lastId) => teamCall(() => teamManager.markRead(String(channel), Number(lastId))));
 
     ipcMain.handle('system:getAutoLaunch', () => readAutoLaunch());
     ipcMain.handle('system:setAutoLaunch', (_e, on) => {

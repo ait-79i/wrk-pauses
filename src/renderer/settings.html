@@ -107,6 +107,29 @@
                 Affiche dans la fenêtre principale le bandeau avec la prochaine prière et son compte à rebours.
                 Le rappel avant la prière reste actif même si le bandeau est masqué.
             </p>
+            <label class="rule-field alert-message-field">
+                <span class="rule-label">Message du rappel</span>
+                <input type="text" id="alertMessageInput" class="time-input alert-message-input" maxlength="120" autocomplete="off" spellcheck="false">
+                <span class="rule-hint">Texte affiché en grand sur l'écran de rappel. Laissez vide pour le message par défaut.</span>
+            </label>
+        </section>
+
+        <!-- Équipe de prière : visible dans l'application Windows (window.psTeam) -->
+        <section id="teamSection" class="startup-card" hidden>
+            <h2 class="startup-title">Prière en groupe</h2>
+            <p id="teamSummary" class="rule-hint"></p>
+            <label class="startup-toggle">
+                <input type="checkbox" id="teamNotificationsToggle" class="switch-input" role="switch">
+                <span class="switch" aria-hidden="true"></span>
+                <span class="startup-toggle-label">Notifications Windows</span>
+            </label>
+            <p class="rule-hint">
+                Horaires publiés ou modifiés dans votre catégorie, annonces, mentions et changements de votre accès.
+                Les messages ordinaires ne notifient pas : ils s'ajoutent au compteur de la discussion.
+            </p>
+            <div class="team-settings-actions">
+                <button type="button" id="leaveTeamBtn" class="btn-ghost" hidden>Quitter l'équipe</button>
+            </div>
         </section>
 
         <!-- Mode Plein Écran pour les pauses -->

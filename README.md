@@ -1,118 +1,236 @@
-# Pause — application Windows
+# Pause
 
-Version bureau (Electron + TypeScript 7) de « Pause ». Suivi de la journée de travail, capital pause, horaires de prière Aladhan, et historique SQLite local.
+Pause aide une équipe de bureau au Maroc à suivre sa journée de travail et à **prier ensemble**.
 
-## Pourquoi une application plutôt qu'une extension
+- **Pour chacun** : heure d'arrivée, pauses, heure de sortie, horaires officiels de prière et rappel plein écran.
+- **Pour l'équipe** : chaque jour, un admin publie les horaires de Dhuhr et d'Asr par groupe (G1 à 12:26, G2 à 12:36…). Chacun choisit son groupe dans l'application, et le rappel se cale sur l'heure de ce groupe. Une discussion par catégorie remplace les messages d'horaires postés jusqu'ici à la main.
 
-Une extension de navigateur ne voit que les onglets et fenêtres Chrome. L'application, elle, agit au niveau du système :
-
-- l'**écran de pause** s'affiche en plein écran sur **chaque moniteur**, par‑dessus toutes les applications ;
+Le vocabulaire (Équipe, Catégorie, Groupe, Horaire du jour, Choix de groupe…) est défini dans [GLOSSARY.md](GLOSSARY.md).
 
 ---
 
-## Commandes de développement
+## Sommaire
 
-Le projet est entièrement typé sous **TypeScript 7** avec vérification stricte des types.
+1. [Les trois parties](#les-trois-parties)
+2. [Utiliser Pause](#utiliser-pause)
+3. [Développer](#développer)
+4. [Déployer](#déployer)
+5. [Données et confidentialité](#données-et-confidentialité)
+6. [Sécurité](#sécurité)
+7. [Organisation du dépôt](#organisation-du-dépôt)
+8. [Documentation](#documentation)
+
+---
+
+## Les trois parties
+
+```
+┌──────────────────────────┐        HTTPS + WebSocket         ┌──────────────────────────────┐
+│ Application Windows      │ ───────────────────────────────▶ │ Serveur (Docker sur Coolify) │
+│ Electron · src/          │   /api/app/*   (clé d'appareil)  │ Fastify + Prisma · server/   │
+│ - journée et pauses      │                                  │ - équipes, horaires, choix   │
+│ - rappel de prière       │                                  │ - discussion, temps réel     │
+│ - prière en groupe       │                                  │ - statistiques, journal      │
+└──────────────────────────┘                                  └───────────┬──────────────────┘
+                                                                          │ MySQL 8.4
+┌──────────────────────────┐        HTTPS + WebSocket                     │
+│ Tableau de bord web      │ ───────────────────────────────▶  /api/admin/* (session + 2FA)
+│ React · server/web/      │   servi par le même serveur sur https://pause.8hqi.com
+└──────────────────────────┘
+```
+
+| Partie | Technologies | Pour qui |
+|---|---|---|
+| Application Windows (`src/`) | Electron 44, TypeScript 7, SQLite (sql.js) | chaque membre |
+| Serveur (`server/`) | Node 24, Fastify 5, Prisma 7, MySQL 8.4, WebSocket | hébergé sur le serveur Oracle via Coolify |
+| Tableau de bord (`server/web/`) | React 19, Vite | super admin et admins d'équipe |
+
+L'application fonctionne aussi **seule**, sans rejoindre d'équipe : tout le suivi personnel reste local.
+
+---
+
+## Utiliser Pause
+
+### Membre (application Windows)
+
+1. **Journée** : saisissez l'heure d'arrivée, démarrez et terminez vos pauses. Pause calcule la pause disponible et l'heure de sortie selon les règles de la journée (réglables, mode Ramadan inclus).
+2. **Rappel personnel** : dans le bandeau de prière, choisissez l'heure du rappel. Le rappel couvre tout l'écran ; son message se règle dans **Réglages › Prière**.
+3. **Rejoindre une équipe** : panneau « Prière en groupe » › **Rejoindre**, puis le code d'accès donné par l'admin (ex. `K7P-2QW`) et votre prénom. Le code détermine votre catégorie (Hommes, Femmes…).
+4. **Choisir son groupe** : dès que les horaires du jour sont publiés, touchez un groupe (G1 12:26). Le chiffre indique combien de personnes y sont inscrites. Vous pouvez changer d'avis jusqu'à l'heure du groupe. **« Choisir G1 chaque jour »** en fait votre groupe habituel.
+5. **Rappel de groupe** : il s'affiche 5 minutes avant l'heure de votre groupe et remplace votre rappel personnel pour cette prière. Hors ligne, les derniers horaires reçus restent utilisés.
+6. **Vendredi** : dans une catégorie où Jumu'a est activée, Dhuhr est remplacée par un créneau unique de Jumu'a.
+7. **Discussion** : bouton « Discussion » du panneau d'équipe. Réponses, `@mentions`, réactions (👍 ❤️ 🤲 ✅ 😂 😮). Notifications Windows pour les horaires publiés ou modifiés, les mentions et les annonces (désactivables dans **Réglages › Prière en groupe**).
+8. **Changer d'ordinateur** : demandez un **code de transfert** à un admin, puis « J'ai un code de transfert » dans le panneau d'équipe.
+
+### Admin d'équipe, admin de catégorie, responsable horaires
+
+- **Publier les horaires du jour** : depuis l'application (panneau d'équipe) ou le tableau de bord (onglet **Horaires du jour**). Le formulaire est prérempli avec les derniers horaires. Chaque publication crée une carte dans la discussion et prévient les membres.
+- **Modifier** un horaire déjà publié : les membres gardent leur choix et sont prévenus (« G2 déplacé à 12:40 ») ; retirer un groupe efface les choix qui le visaient.
+- **Discussion** : publier une **annonce**, supprimer un message, réduire un membre au silence (1 h, 24 h, 7 jours).
+- **Membres** (admin d'équipe) : valider, bloquer, changer de catégorie, donner un rôle, générer un code de transfert, créer un accès au tableau de bord.
+- **Catégories et groupes** : ajouter un groupe (G3…), régler la limite (10 par défaut), activer Jumu'a, régénérer un code d'accès (avec expiration optionnelle).
+
+| Rôle | Peut… |
+|---|---|
+| Super admin | tout, sur toutes les équipes ; crée les équipes et nomme les admins d'équipe |
+| Admin d'équipe | gérer son équipe : codes, catégories, membres, rôles, horaires, modération |
+| Admin de catégorie | gérer sa catégorie : groupes, limite, Jumu'a, horaires, modération |
+| Responsable horaires | publier les horaires de sa catégorie et des annonces |
+| Membre | choisir son groupe, discuter dans sa catégorie |
+
+### Super admin (tableau de bord)
+
+- **Vue d'ensemble** : toutes les équipes, horaires publiés ou non aujourd'hui, statistiques globales sur 7 jours.
+- **Statistiques** par équipe : taux de publication, participation par catégorie, effectif moyen par groupe (7, 30 ou 90 jours).
+- **Comptes admin** : ajouter un super admin, désactiver un compte, réinitialiser un mot de passe ou la double authentification.
+- **Journal d'activité** : toutes les actions d'administration, conservées un an.
+
+---
+
+## Développer
+
+### Prérequis
+
+- Windows, Node.js 24, Docker Desktop.
+- npm 11 bloque les scripts d'installation non approuvés : ceux qui sont nécessaires sont déjà listés dans `allowScripts` des `package.json`.
+
+### Application Windows
 
 ```bash
-# Installer les dépendances
 npm install
-
-# Vérification stricte des types (TypeScript 7)
-npm run typecheck
-
-# Compilation TypeScript (vers dist/)
-npm run build
-
-# Lancer l'application en développement
-npm start
-
-# Construire l'installateur Windows NSIS (.exe)
-npm run dist
+npm run typecheck   # vérification stricte des types
+npm start           # compile puis lance Electron
+npm run dist        # installateur Windows dans release/
 ```
 
-Les installateurs (`.exe`, `.blockmap`) sont générés dans le dossier `release/`.
+Pour la relier à un serveur local plutôt qu'à `https://pause.8hqi.com` :
 
----
+```powershell
+$env:PAUSE_SERVER_URL = "http://127.0.0.1:3100"; npm start
+```
 
-## Liaison GitHub & Déploiement CI/CD
+> Lancée depuis un terminal VS Code, Electron hérite de `ELECTRON_RUN_AS_NODE=1` et se ferme aussitôt : supprimez cette variable avant de lancer l'application (`Remove-Item Env:ELECTRON_RUN_AS_NODE`).
 
-### 1. Lier le dépôt local à votre GitHub
-
-Pour lier ce dépôt local au dépôt GitHub [8hqi/pause-desktop](https://github.com/8hqi/pause-desktop) :
+### Serveur et tableau de bord
 
 ```bash
-# Ajouter le remote GitHub
-git remote add origin https://github.com/8hqi/pause-desktop.git
+docker run -d --name pause-mysql-dev -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=pause -p 3307:3306 mysql:8.4
 
-# Définir la branche principale
-git branch -M main
+cd server
+cp .env.example .env                 # renseignez SUPERADMIN_EMAIL et SUPERADMIN_PASSWORD
+npm ci
+DATABASE_URL=mysql://root:root@localhost:3307/pause npx prisma migrate deploy
+npm run dev                          # API + tableau de bord compilé sur http://localhost:3100
 
-# Pousser le code vers GitHub
-git push -u origin main
+cd web && npm ci && npm run dev      # tableau de bord avec rechargement sur http://localhost:5173
 ```
 
-### 2. Publier une nouvelle version automatiquement
+Détails, modification du schéma et dépannage : [server/README.md](server/README.md).
 
-Le workflow GitHub Actions [`.github/workflows/release.yml`](file:///d:/desktop/.github/workflows/release.yml) compile le projet sur Windows et publie la release automatiquement dès qu'un tag de version est poussé :
+### Tests
+
+```powershell
+# Base dédiée, vidée à chaque lancement
+docker exec pause-mysql-dev mysql -uroot -proot -e "CREATE DATABASE IF NOT EXISTS pause_test"
+Set-Location "E:\…\server"            # lettre de lecteur en MAJUSCULE, sinon Vitest charge ses modules deux fois
+$env:DATABASE_URL = "mysql://root:root@localhost:3307/pause_test"; npx prisma migrate deploy
+$env:TEST_DATABASE_URL = "mysql://root:root@localhost:3307/pause_test"; npx vitest run
+```
+
+57 tests : règles métier (jours, Jumu'a, choix de groupe), parcours complet de l'API, discussion et temps réel (vraie connexion WebSocket), statistiques.
+
+---
+
+## Déployer
+
+### Serveur (Coolify sur le serveur Oracle)
+
+1. DNS : `pause.8hqi.com` → IP du serveur Oracle. Ouvrez les ports 80 et 443 (liste de sécurité du VCN **et** pare-feu de l'instance).
+2. Coolify : **New Resource › Docker Compose**, ce dépôt, **Base Directory** `/server`.
+3. Domaine du service `app` : `https://pause.8hqi.com`. Variables : `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD` (12 caractères minimum).
+4. **Deploy** : le conteneur applique les migrations, crée le super admin et sert l'API et le tableau de bord.
+5. Connectez-vous sur `https://pause.8hqi.com` et activez la double authentification.
+6. Programmez une sauvegarde de MySQL dans Coolify (**Backups**).
+
+Guide complet : [server/README.md](server/README.md).
+
+### Application Windows
+
+Le workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) compile l'installateur et publie une release GitHub à chaque tag de version :
 
 ```bash
-# 1. Incrémentez la version dans package.json (ex: 1.0.1)
-npm version 1.0.1 --no-git-tag-version
-
-# 2. Commitez le changement
-git commit -am "chore(release): bump version to 1.0.1"
-
-# 3. Créez le tag Git correspondant
-git tag v1.0.1
-
-# 4. Poussez la branche et le tag sur GitHub
-git push origin main
-git push origin v1.0.1
+npm run release:patch    # 1.0.1 → 1.0.2, crée le tag et pousse
 ```
 
-GitHub Actions prend ensuite le relais :
-1. Vérification stricte des types TypeScript 7 (`npm run typecheck`).
-2. Compilation de l'application (`npm run build`).
-3. Génération de l'installateur Windows NSIS (`release/Pause & Salat Setup 1.0.1.exe`) et du blockmap.
-4. Création de la **GitHub Release** avec changelog automatique et téléversement des binaires.
+Les notes de version sont générées par [`scripts/generate-changelog.js`](scripts/generate-changelog.js) à partir des commits.
 
 ---
 
-## Où sont stockées les données
+## Données et confidentialité
 
-Dans `%APPDATA%\Pause\` :
+| Où | Quoi |
+|---|---|
+| `%APPDATA%\Pause\state.json` | journée en cours, réglages, horaires du jour, données d'équipe reçues |
+| `%APPDATA%\Pause\history.sqlite` | historique des journées |
+| `%APPDATA%\Pause\team-key.bin` | clé de l'appareil, chiffrée par Windows (DPAPI) |
+| Dossier de synchronisation choisi (Google Drive…) | copie de l'historique et des réglages, si la synchronisation est activée |
+| Serveur MySQL | équipes, catégories, groupes, membres (prénom), horaires, choix de groupe, discussions, journal d'activité |
 
-| Fichier          | Contenu                                                        |
-|------------------|----------------------------------------------------------------|
-| `state.json`     | journée en cours, réglages, horaires du jour                   |
-| `history.sqlite` | historique des journées (base SQLite sql.js)                   |
+- **Le serveur ne connaît pas les pauses** ni les heures d'arrivée et de sortie : personne, pas même le super admin, ne voit le temps de pause d'un membre ([ADR 0002](docs/adr/0002-serveur-equipes-sans-donnees-de-pause.md)).
+- Un membre ne voit que la discussion et les horaires de **sa** catégorie.
+- Les messages sont supprimés après **90 jours**, le journal d'activité après **un an**.
 
 ---
 
-## Architecture du projet
+## Sécurité
+
+- **Membres** : pas de mot de passe ; l'identité est une clé secrète propre à l'ordinateur, stockée chiffrée et jamais exposée aux fenêtres de l'application ([ADR 0001](docs/adr/0001-membres-identifies-par-appareil.md)). Noms uniques par équipe, validation optionnelle des nouveaux membres, code de transfert à usage unique (24 h).
+- **Tableau de bord** : email et mot de passe (scrypt), session en cookie `httpOnly` `SameSite=Strict`, double authentification obligatoire pour le super admin.
+- **Serveur** : validation de toutes les entrées (zod), limites de débit (connexion, adhésion, messages, réactions, connexions WebSocket), en-têtes de sécurité (CSP, HSTS en production), contrôle de l'origine sur le WebSocket du tableau de bord, conteneur sans droits root.
+- **Application** : la fenêtre de discussion, seule à afficher le texte d'autres personnes, est isolée (`contextIsolation`, `sandbox`, CSP stricte) ; tout texte reçu est inséré comme texte, jamais comme HTML.
+- **Journal d'activité** : publications, modération, codes, rôles, comptes.
+
+---
+
+## Organisation du dépôt
 
 ```
 .
-├── .github/workflows/
-│   └── release.yml        # CI/CD GitHub Actions de build et publication de releases
-├── build/                 # Icônes de l'application (.ico, .png)
-├── src/
-│   ├── main/              # Processus principal (Node / Electron en TypeScript 7)
-│   │   ├── main.ts        # Point d'entrée Electron, fenêtres, systray, IPC
-│   │   ├── store.ts       # Stockage clé/valeur persistant atomique
-│   │   ├── history.ts     # Base SQLite (sql.js) pour l'historique des journées
-│   │   ├── exporter.ts    # Génération des exports Excel (.xlsx) et CSV (.csv)
-│   │   ├── preload.ts     # Pont IPC exposant chrome, psHistory, psSystem, psSync
-│   │   ├── shared.ts      # Injection des règles partagées dans l'environnement global
-│   │   └── types.ts       # Définitions d'interfaces et types TypeScript
-│   ├── shared/            # Règles de calcul partagées (salat-core, day-core, salat-card)
-│   └── renderer/          # Interfaces web Chromium (popup, réglages, alerte, pause, historique)
-│       ├── common.css     # Styles partagés Réglages / Historique (statut de synchro, export)
-│       └── ...
-├── dist/                  # Code JavaScript compilé par tsc (exclu de Git)
-├── release/               # Installateurs .exe générés par electron-builder (exclu de Git)
-├── package.json           # Scripts, configuration electron-builder
-├── tsconfig.json          # Configuration TypeScript 7 (strict, NodeNext, ES2022)
-└── .gitignore             # Règles d'exclusion Git pour production
+├── GLOSSARY.md                     # vocabulaire du domaine
+├── docs/
+│   ├── adr/                        # décisions d'architecture
+│   └── contrat-api-phases-2-3.md   # routes, objets JSON et évènements temps réel
+├── src/                            # APPLICATION WINDOWS
+│   ├── main/
+│   │   ├── main.ts                 # fenêtres, zone de notification, rappels, IPC
+│   │   ├── team.ts                 # équipe : API, WebSocket, notifications Windows
+│   │   ├── preload.ts              # pont des fenêtres principales
+│   │   ├── chat-preload.ts         # pont réduit de la fenêtre de discussion (isolée)
+│   │   └── store.ts, history.ts, sync.ts, exporter.ts, types.ts, shared.ts
+│   ├── shared/                     # règles partagées : salat-core (horaires, rappels), day-core (journée), salat-card
+│   └── renderer/                   # fenêtres : popup (+ team-panel, reminder-picker), chat, alert, pause, settings, history
+├── server/                         # SERVEUR + TABLEAU DE BORD
+│   ├── prisma/                     # schéma MySQL et migrations
+│   ├── src/
+│   │   ├── routes/                 # app-api, admin-api, chat-api, stats-api, validation
+│   │   ├── services/               # rules (règles pures), schedule, access, chat, realtime, stats
+│   │   └── lib/                    # sécurité, heure locale, journal, erreurs, session admin
+│   ├── test/                       # Vitest (unitaires + intégration MySQL)
+│   ├── web/                        # tableau de bord React
+│   ├── Dockerfile, docker-compose.yml, .env.example
+│   └── README.md                   # déploiement et développement du serveur
+├── scripts/generate-changelog.js
+├── .github/workflows/release.yml
+└── package.json                    # application Windows et configuration electron-builder
 ```
+
+---
+
+## Documentation
+
+| Document | Contenu |
+|---|---|
+| [GLOSSARY.md](GLOSSARY.md) | définition de chaque terme du domaine |
+| [docs/adr/](docs/adr/) | décisions difficiles à défaire et leurs raisons |
+| [docs/contrat-api-phases-2-3.md](docs/contrat-api-phases-2-3.md) | API de discussion, temps réel et statistiques |
+| [server/README.md](server/README.md) | déploiement Coolify, développement et tests du serveur |

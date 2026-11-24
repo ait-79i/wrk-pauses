@@ -1,0 +1,326 @@
+// Modèle de données des équipes Pause. Vocabulaire : voir GLOSSARY.md à la racine du dépôt.
+// Heures : minutes depuis minuit, heure locale de la ville de l'équipe. Dates : jour local (DATE).
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+/// Équipe : espace rejoint avec un code d'accès.
+model Team {
+  id              Int              @id @default(autoincrement())
+  name            String           @db.VarChar(80)
+  /// Ville de l'équipe (horaires officiels Aladhan)
+  city            String           @default("Marrakesh") @db.VarChar(80)
+  country         String           @default("MA") @db.Char(2)
+  /// Les nouveaux membres attendent la validation d'un admin
+  requireApproval Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  categories      Category[]
+  members         Member[]
+  roles           RoleAssignment[]
+  messages        Message[]
+}
+
+/// Catégorie : subdivision d'une équipe (Hommes, Femmes…). Un membre ne voit que la sienne.
+model Category {
+  id           Int              @id @default(autoincrement())
+  teamId       Int
+  team         Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name         String           @db.VarChar(60)
+  /// Nombre maximal de groupes (10 par défaut)
+  maxGroups    Int              @default(10)
+  jumuaEnabled Boolean          @default(true)
+  sortOrder    Int              @default(0)
+  createdAt    DateTime         @default(now())
+  groups       Group[]
+  accessCodes  AccessCode[]
+  members      Member[]
+  publications Publication[]
+  roles        RoleAssignment[]
+  messages     Message[]
+
+  @@unique([teamId, name])
+}
+
+/// Groupe : créneau de prière d'une catégorie (G1, G2…).
+model Group {
+  id         Int               @id @default(autoincrement())
+  categoryId Int
+  category   Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name       String            @db.VarChar(20)
+  sortOrder  Int               @default(0)
+  createdAt  DateTime          @default(now())
+  slots      PublicationSlot[]
+  choices    GroupChoice[]
+  usuals     UsualGroup[]
+
+  @@unique([categoryId, name])
+}
+
+/// Code d'accès : mène à une catégorie précise d'une équipe.
+model AccessCode {
+  id         Int       @id @default(autoincrement())
+  categoryId Int
+  category   Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  code       String    @unique @db.VarChar(16)
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+enum MemberStatus {
+  PENDING
+  ACTIVE
+  BLOCKED
+}
+
+/// Membre : identifié par la clé secrète de son appareil (ADR 0001).
+model Member {
+  id              Int              @id @default(autoincrement())
+  teamId          Int
+  team            Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  categoryId      Int
+  category        Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name            String           @db.VarChar(60)
+  /// SHA-256 de la clé de l'appareil (la clé elle-même n'est jamais stockée)
+  deviceTokenHash String           @unique @db.Char(64)
+  status          MemberStatus     @default(ACTIVE)
+  createdAt       DateTime         @default(now())
+  lastSeenAt      DateTime?
+  /// Réduit au silence dans la discussion jusqu'à cette date (nul ou passée : peut écrire)
+  mutedUntil      DateTime?
+  roles           RoleAssignment[]
+  choices         GroupChoice[]
+  usuals          UsualGroup[]
+  adminAccount    AdminAccount?
+  transferCodes   TransferCode[]
+  messages        Message[]
+  mentions        MessageMention[]
+  channelReads    ChannelRead[]
+
+  @@unique([teamId, name])
+}
+
+enum Role {
+  TEAM_ADMIN
+  CATEGORY_ADMIN
+  SCHEDULER
+}
+
+/// Rôle d'un membre : sur toute l'équipe (TEAM_ADMIN, categoryId nul) ou sur une catégorie.
+model RoleAssignment {
+  id         Int       @id @default(autoincrement())
+  memberId   Int
+  member     Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  teamId     Int
+  team       Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  categoryId Int?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  role       Role
+  createdAt  DateTime  @default(now())
+
+  @@unique([memberId, role, categoryId])
+}
+
+/// Compte du tableau de bord web : super admin, ou admin relié à son identité de membre.
+model AdminAccount {
+  id           Int            @id @default(autoincrement())
+  email        String         @unique @db.VarChar(190)
+  passwordHash String         @db.VarChar(255)
+  isSuperAdmin Boolean        @default(false)
+  totpSecret   String?        @db.VarChar(64)
+  totpEnabled  Boolean        @default(false)
+  memberId     Int?           @unique
+  member       Member?        @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  disabled     Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  lastLoginAt  DateTime?
+  sessions     AdminSession[]
+  messages     Message[]
+}
+
+model AdminSession {
+  id        Int          @id @default(autoincrement())
+  tokenHash String       @unique @db.Char(64)
+  adminId   Int
+  admin     AdminAccount @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  /// false tant que le second facteur (TOTP) n'est pas validé
+  verified  Boolean      @default(false)
+  expiresAt DateTime
+  createdAt DateTime     @default(now())
+}
+
+/// Code de transfert : à usage unique, pour retrouver son compte sur un autre ordinateur.
+model TransferCode {
+  id        Int       @id @default(autoincrement())
+  memberId  Int
+  member    Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  code      String    @unique @db.VarChar(16)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+enum Prayer {
+  DHUHR
+  ASR
+  JUMUA
+}
+
+/// Publication des horaires : horaires du jour d'une prière pour une catégorie.
+model Publication {
+  id          Int               @id @default(autoincrement())
+  categoryId  Int
+  category    Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  date        DateTime          @db.Date
+  prayer      Prayer
+  publishedBy String            @db.VarChar(80)
+  publishedAt DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  slots       PublicationSlot[]
+
+  @@unique([categoryId, date, prayer])
+}
+
+/// Horaire du jour d'un groupe (groupId nul pour le créneau unique de Jumu'a).
+model PublicationSlot {
+  id            Int         @id @default(autoincrement())
+  publicationId Int
+  publication   Publication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  groupId       Int?
+  group         Group?      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  /// Minutes depuis minuit
+  timeMins      Int
+
+  @@unique([publicationId, groupId])
+}
+
+/// Choix de groupe d'un membre pour une prière d'un jour ouvré.
+/// groupId nul : le membre ne prie avec aucun groupe ce jour-là (même s'il a un groupe habituel).
+model GroupChoice {
+  id        Int      @id @default(autoincrement())
+  memberId  Int
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  prayer    Prayer
+  groupId   Int?
+  group     Group?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @updatedAt
+
+  @@unique([memberId, date, prayer])
+}
+
+/// Groupe habituel : appliqué d'office dès la publication des horaires.
+model UsualGroup {
+  id       Int    @id @default(autoincrement())
+  memberId Int
+  member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  prayer   Prayer
+  groupId  Int
+  group    Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, prayer])
+}
+
+/// Journal des actions d'administration (conservé 1 an).
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  actor     String   @db.VarChar(120)
+  action    String   @db.VarChar(60)
+  teamId    Int?
+  target    String?  @db.VarChar(190)
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([teamId, createdAt])
+  @@index([createdAt])
+}
+
+enum MessageKind {
+  TEXT
+  ANNOUNCEMENT
+  /// Carte de publication des horaires, créée par le serveur
+  SCHEDULE
+}
+
+enum AuthorType {
+  MEMBER
+  ADMIN
+  SYSTEM
+}
+
+/// Message d'une discussion. Canal : « cat:<categoryId> » (catégorie) ou « admins:<teamId> » (admins de l'équipe).
+/// Conservé 90 jours (purge quotidienne).
+model Message {
+  id         Int              @id @default(autoincrement())
+  teamId     Int
+  team       Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  /// Catégorie du canal ; nulle pour la discussion des admins
+  categoryId Int?
+  category   Category?        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  channel    String           @db.VarChar(32)
+  kind       MessageKind      @default(TEXT)
+  authorType AuthorType
+  memberId   Int?
+  member     Member?          @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  adminId    Int?
+  admin      AdminAccount?    @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  /// Nom de l'auteur au moment de l'envoi
+  authorName String           @db.VarChar(80)
+  /// Texte brut (jamais de HTML) ; vidé à la suppression
+  body       String           @db.Text
+  replyToId  Int?
+  replyTo    Message?         @relation("Replies", fields: [replyToId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  replies    Message[]        @relation("Replies")
+  /// Détail de la publication pour kind = SCHEDULE
+  schedule   Json?
+  deletedAt  DateTime?
+  createdAt  DateTime         @default(now())
+  reactions  MessageReaction[]
+  mentions   MessageMention[]
+
+  @@index([channel, id])
+  @@index([createdAt])
+}
+
+/// Réaction à un message : une par emoji et par personne (« m:<memberId> » ou « a:<adminId> »).
+model MessageReaction {
+  id        Int      @id @default(autoincrement())
+  messageId Int
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  actorKey  String   @db.VarChar(24)
+  emoji     String   @db.VarChar(16)
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, actorKey, emoji])
+}
+
+/// Mention d'un membre (@nom) dans un message.
+model MessageMention {
+  id        Int     @id @default(autoincrement())
+  messageId Int
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  memberId  Int
+  member    Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, memberId])
+  @@index([memberId])
+}
+
+/// Dernier message lu par un membre dans un canal (compteur de non lus).
+model ChannelRead {
+  id         Int      @id @default(autoincrement())
+  memberId   Int
+  member     Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  channel    String   @db.VarChar(32)
+  lastReadId Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@unique([memberId, channel])
+}

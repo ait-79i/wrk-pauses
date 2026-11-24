@@ -132,6 +132,66 @@ if (showSalatToggle) {
     });
 }
 
+// Message de l'écran de rappel de prière (enregistré pendant la saisie)
+const alertMessageInput = document.getElementById('alertMessageInput');
+if (alertMessageInput) {
+    let saveTimer = null;
+    alertMessageInput.placeholder = DEFAULT_ALERT_MESSAGE;
+    alertMessageInput.maxLength = ALERT_MESSAGE_MAX_LENGTH;
+    chrome.storage.local.get('salatAlertMessage', (res) => {
+        alertMessageInput.value = typeof res.salatAlertMessage === 'string' ? res.salatAlertMessage : '';
+    });
+    alertMessageInput.addEventListener('input', () => {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+            chrome.storage.local.set({ salatAlertMessage: alertMessageInput.value.trim() }, showSaved);
+        }, 500);
+    });
+}
+
+// Équipe de prière (application Windows) : résumé et départ de l'équipe
+const teamSection = document.getElementById('teamSection');
+if (window.psTeam && teamSection) {
+    teamSection.hidden = false;
+    const summary = document.getElementById('teamSummary');
+    const leaveBtn = document.getElementById('leaveTeamBtn');
+    let confirmTimer = null;
+
+    const renderTeam = (team) => {
+        leaveBtn.hidden = !team;
+        leaveBtn.textContent = "Quitter l'équipe";
+        summary.textContent = team
+            ? `Vous êtes ${team.memberName}, dans la catégorie ${team.categoryName} de l'équipe ${team.teamName}.`
+            : "Vous n'avez rejoint aucune équipe. Rejoignez-la depuis la fenêtre principale avec le code donné par son admin.";
+    };
+    chrome.storage.local.get('team', (res) => renderTeam(res.team || null));
+
+    // Notifications Windows de l'équipe (activées par défaut)
+    const notifToggle = document.getElementById('teamNotificationsToggle');
+    if (notifToggle) {
+        chrome.storage.local.get('teamNotifications', (res) => { notifToggle.checked = res.teamNotifications !== false; });
+        notifToggle.addEventListener('change', () => {
+            chrome.storage.local.set({ teamNotifications: notifToggle.checked }, showSaved);
+        });
+    }
+    chrome.storage.onChanged.addListener((changes) => { if (changes.team) renderTeam(changes.team.newValue || null); });
+
+    // Deux clics pour confirmer : quitter efface vos choix de groupe dans l'équipe
+    leaveBtn.addEventListener('click', async () => {
+        if (!confirmTimer) {
+            leaveBtn.textContent = 'Cliquez à nouveau pour confirmer';
+            confirmTimer = setTimeout(() => { confirmTimer = null; leaveBtn.textContent = "Quitter l'équipe"; }, 4000);
+            return;
+        }
+        clearTimeout(confirmTimer);
+        confirmTimer = null;
+        leaveBtn.disabled = true;
+        const res = await window.psTeam.leave();
+        leaveBtn.disabled = false;
+        if (res.ok) showSaved();
+    });
+}
+
 // Chargement initial
 chrome.storage.local.get(DAY_RULES_KEY, (res) => fillForm(res[DAY_RULES_KEY]));
 

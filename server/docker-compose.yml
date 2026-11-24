@@ -1,0 +1,46 @@
+# Déploiement Coolify : Docker Compose (base directory : /server).
+# Coolify génère les variables SERVICE_* (mots de passe) et branche le domaine sur le service « app ».
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      - SERVICE_FQDN_APP_3000
+      - NODE_ENV=production
+      - PORT=3000
+      - PUBLIC_URL=${PUBLIC_URL:-https://pause.8hqi.com}
+      - DATABASE_URL=mysql://pause:${SERVICE_PASSWORD_MYSQL}@mysql:3306/pause
+      - SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL}
+      - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD}
+      - LOCAL_OFFSET_HOURS=${LOCAL_OFFSET_HOURS:-0}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      - MYSQL_DATABASE=pause
+      - MYSQL_USER=pause
+      - MYSQL_PASSWORD=${SERVICE_PASSWORD_MYSQL}
+      - MYSQL_ROOT_PASSWORD=${SERVICE_PASSWORD_MYSQLROOT}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - pause-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  pause-mysql-data:

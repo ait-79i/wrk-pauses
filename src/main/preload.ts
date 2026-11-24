@@ -1,8 +1,8 @@
 // Pont entre le processus principal et les fenêtres.
 // Expose un objet `chrome` minimal (storage.local, runtime, tabs) de même forme que l'API
 // de l'extension : les fichiers d'interface (popup.js, pause.js…) tournent sans modification.
-// En plus, `psHistory`, `psSystem` et `psSync` donnent accès
-// à l'historique SQLite, aux réglages système et à la synchronisation.
+// En plus, `psHistory`, `psSystem`, `psSync`, `psTeam` et `psChat` donnent accès
+// à l'historique SQLite, aux réglages système, à la synchronisation et à l'équipe.
 
 import { ipcRenderer } from 'electron';
 import { SyncConfig, SyncResult, SyncStatus } from './types';
@@ -122,6 +122,44 @@ const psSync = {
     }
 };
 
+// Équipe de prière : chaque appel renvoie { ok, value } ou { ok: false, message }
+const psTeam = {
+    join: (code: string, name: string) => ipcRenderer.invoke('team:join', code, name),
+    transfer: (code: string) => ipcRenderer.invoke('team:transfer', code),
+    leave: () => ipcRenderer.invoke('team:leave'),
+    choose: (date: string, prayer: string, groupId: number | null) => ipcRenderer.invoke('team:choose', date, prayer, groupId),
+    setUsual: (prayer: string, groupId: number | null) => ipcRenderer.invoke('team:setUsual', prayer, groupId),
+    // slots : [{ groupId, time: 'HH:MM' }] ; Jumu'a : un seul horaire, groupId null
+    publish: (date: string, prayer: string, slots: { groupId: number | null; time: string }[]) =>
+        ipcRenderer.invoke('team:publish', date, prayer, slots),
+    refresh: () => ipcRenderer.invoke('team:refresh'),
+    openChat: (channel?: string) => ipcRenderer.invoke('team:openChat', channel ?? null)
+};
+
+// Discussion de l'équipe : mêmes retours { ok, value } / { ok: false, message }.
+// La clé de l'appareil reste dans le processus principal.
+const psChat = {
+    channels: () => ipcRenderer.invoke('chat:channels'),
+    messages: (channel: string, before?: number | null) => ipcRenderer.invoke('chat:messages', channel, before ?? null),
+    post: (channel: string, body: string, kind?: 'TEXT' | 'ANNOUNCEMENT', replyToId?: number | null) =>
+        ipcRenderer.invoke('chat:post', channel, body, kind ?? 'TEXT', replyToId ?? null),
+    remove: (id: number) => ipcRenderer.invoke('chat:remove', id),
+    react: (id: number, emoji: string) => ipcRenderer.invoke('chat:react', id, emoji),
+    markRead: (channel: string, lastId: number) => ipcRenderer.invoke('chat:markRead', channel, lastId),
+    /** Évènements temps réel du serveur ({ type, ... }) ; renvoie la fonction de désabonnement */
+    onEvent: (cb: (event: any) => void): (() => void) => {
+        const handler = (_e: any, event: any) => cb(event);
+        ipcRenderer.on('team:event', handler);
+        return () => ipcRenderer.removeListener('team:event', handler);
+    },
+    /** Demande d'ouverture d'un canal précis (clic sur une notification) */
+    onOpenChannel: (cb: (channel: string) => void): (() => void) => {
+        const handler = (_e: any, channel: string) => cb(channel);
+        ipcRenderer.on('chat:openChannel', handler);
+        return () => ipcRenderer.removeListener('chat:openChannel', handler);
+    }
+};
+
 // Remplace le window.chrome de Chromium par notre passerelle
 function define(name: string, value: any): void {
     try {
@@ -139,4 +177,6 @@ define('chrome', chromeShim);
 define('psHistory', psHistory);
 define('psSystem', psSystem);
 define('psSync', psSync);
+define('psTeam', psTeam);
+define('psChat', psChat);
 

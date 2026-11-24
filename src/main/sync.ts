@@ -229,6 +229,8 @@ export class SyncManager {
                 dayRulesConfig: this.store.value('dayRulesConfig'),
                 isRamadanMode: this.store.value('isRamadanMode'),
                 salatAlertLead: this.store.value('salatAlertLead'),
+                salatAlertAt: this.store.value('salatAlertAt'),
+                salatAlertMessage: this.store.value('salatAlertMessage'),
                 autoLaunch: this.store.value('autoLaunch'),
                 updatedAt: configTimestamp
             },
@@ -294,6 +296,8 @@ export class SyncManager {
                 if (remote.config.dayRulesConfig !== undefined) patch.dayRulesConfig = remote.config.dayRulesConfig;
                 if (remote.config.isRamadanMode !== undefined) patch.isRamadanMode = remote.config.isRamadanMode;
                 if (remote.config.salatAlertLead !== undefined) patch.salatAlertLead = remote.config.salatAlertLead;
+                if (remote.config.salatAlertAt !== undefined) patch.salatAlertAt = remote.config.salatAlertAt;
+                if (remote.config.salatAlertMessage !== undefined) patch.salatAlertMessage = remote.config.salatAlertMessage;
                 if (remote.config.autoLaunch !== undefined) patch.autoLaunch = remote.config.autoLaunch;
 
                 this.store.set(patch);

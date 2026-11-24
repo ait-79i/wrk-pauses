@@ -10,7 +10,6 @@ declare global {
     var PRAYER_ORDER: string[];
     var PRAYER_LABELS: Record<string, string>;
     var DEFAULT_ALERT_LEAD_MINS: number;
-    var ALERT_LEAD_CHOICES: number[];
     var DEFAULT_CLOCK_IN: string;
     var DAY_RULES_KEY: string;
 
@@ -23,6 +22,9 @@ declare global {
     function fetchSalatDay(dateKey: string): Promise<any>;
     function nextPrayer(times: any, nowSecs: number): { name: string; mins: number };
     function pendingSalatAlert(state: any): any;
+    function salatAlertSettings(state: any): { at: number | null; lead: number | null };
+    function teamAlertStarts(teamDay: any, today: string): number[];
+    var SALAT_ALERT_KEYS: string[];
     function recordPause(pauses: any[] | undefined, start: number | null | undefined, end: number): any[];
     function computeDay(options: { clockIn: string; dayPauses: any[]; activeSecs?: number; ramadan?: boolean }): { departureMins: number; [key: string]: any };
     function availablePauseForTarget(options: { clockIn: string; dayPauses: any[]; activeSecs?: number; ramadan?: boolean; targetOutMins: number }): number;

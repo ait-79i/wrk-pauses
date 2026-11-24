@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <!-- Texte venant d'autres personnes : rien d'autre que les fichiers de l'application et les polices -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+    <title>Discussion — Pause</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Reem+Kufi:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="chat.css">
+</head>
+<body>
+    <!-- Discussion de l'équipe : rempli par chat.js (vocabulaire : GLOSSARY.md) -->
+    <div class="chat" id="chatApp">
+        <header class="chat-head">
+            <div class="chat-head-row">
+                <h1 class="chat-title">Discussion</h1>
+                <span id="chatTeam" class="chat-team"></span>
+            </div>
+            <div id="chatTabs" class="chat-tabs" role="tablist" aria-label="Discussions"></div>
+            <p id="chatOffline" class="chat-offline" role="status" hidden>Hors ligne. Reconnexion automatique…</p>
+        </header>
+
+        <main id="chatMain" class="chat-main">
+            <!-- Pas de région live ici : la liste est reconstruite à chaque mise à jour. Les nouveaux messages sont annoncés par #chatAnnounce. -->
+            <div id="chatList" class="chat-list" role="region" tabindex="0" aria-label="Messages"></div>
+            <p id="chatAnnounce" class="sr-only" aria-live="polite" aria-atomic="true"></p>
+            <button type="button" id="chatNewPill" class="chat-new-pill" hidden>Nouveaux messages</button>
+        </main>
+
+        <p id="chatStatus" class="chat-status" role="alert" hidden></p>
+
+        <footer id="chatFooter" class="chat-footer"></footer>
+    </div>
+    <script src="../shared/salat-core.js"></script>
+    <script src="chat.js"></script>
+</body>
+</html>

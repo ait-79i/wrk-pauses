@@ -63,7 +63,7 @@
                     <span id="salatCountdown" class="salat-countdown" aria-live="off">--:--:--</span>
                     <div class="salat-actions">
                         <button type="button" id="reminderTrigger" class="salat-reminder" popovertarget="reminderMenu"
-                                aria-haspopup="listbox" aria-expanded="false" aria-controls="reminderMenu">
+                                aria-haspopup="dialog" aria-expanded="false" aria-controls="reminderMenu">
                             <svg class="reminder-bell" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                 <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
                                 <path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>
@@ -78,6 +78,9 @@
                 </div>
                 <h2 id="salatTitle" class="salat-title" lang="ar" dir="rtl">الصلاة أولا</h2>
             </section>
+
+            <!-- PRIÈRE EN GROUPE (équipe) : rempli par team-panel.js, application Windows uniquement -->
+            <section id="teamPanel" class="team-panel" aria-label="Prière en groupe" hidden></section>
 
             <!-- ARRIVÉE & PAUSE DISPO -->
             <section class="day-grid">
@@ -183,11 +186,12 @@
         </main>
 
         <!-- Menu du rappel : dans le wrapper pour hériter du thème Ramadan -->
-        <div id="reminderMenu" class="reminder-menu" popover role="listbox" tabindex="-1" aria-label="Rappel avant la prière"></div>
+        <div id="reminderMenu" class="reminder-menu" popover role="dialog" tabindex="-1" aria-label="Rappel avant la prière"></div>
     </div>
     <script src="../shared/salat-core.js"></script>
     <script src="../shared/day-core.js"></script>
     <script src="reminder-picker.js"></script>
+    <script src="team-panel.js"></script>
     <script src="popup.js"></script>
 </body>
 </html>

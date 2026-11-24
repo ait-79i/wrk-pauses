@@ -1,124 +1,64 @@
-// Sélecteur « Rappel avant la prière » : bouton + menu (Popover API, rendu au-dessus de tout).
-// Accessible au clavier : flèches, Début/Fin, Entrée/Espace, Échap.
+// Sélecteur du rappel de prière : bouton + menu (Popover API, rendu au-dessus de tout).
+// L'utilisateur choisit directement l'heure du rappel (HH:MM, heure du Maroc).
+// Clavier : Entrée valide, Échap ferme.
 
 /**
  * @param {{ trigger: HTMLButtonElement, label: HTMLElement, menu: HTMLElement,
- *           choices: number[], onChange: (lead: number|null) => void }} opts
+ *           onChange: (atMins: number|null) => void }} opts
+ *   onChange reçoit l'heure du rappel en minutes depuis minuit, ou null (désactivé).
  */
-function createReminderPicker({ trigger, label, menu, choices, onChange }) {
+function createReminderPicker({ trigger, label, menu, onChange }) {
     const MENU_GAP_PX = 6;
     const VIEWPORT_MARGIN_PX = 8;
-    const options = [...choices.map((m) => ({ value: m, text: `${m} min avant` })), { value: null, text: 'Désactivé' }];
-    let current = null;
+    let settings = { at: null, lead: null }; // cf. salatAlertSettings() (salat-core.js)
 
     const CHECK_SVG = '<svg class="reminder-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
-    function optionId(value) {
-        return `reminder-opt-${value === null ? 'off' : value}`;
+    menu.innerHTML =
+        '<p class="reminder-menu-title">Heure du rappel de prière</p>' +
+        '<form class="reminder-lead-form" novalidate>' +
+        '<input type="number" class="reminder-lead-input" name="hours" min="0" max="23" step="1" inputmode="numeric" placeholder="HH" aria-label="Heure du rappel">' +
+        '<span class="reminder-time-sep" aria-hidden="true">:</span>' +
+        '<input type="number" class="reminder-lead-input" name="mins" min="0" max="59" step="1" inputmode="numeric" placeholder="MM" aria-label="Minutes du rappel">' +
+        '<button type="submit" class="reminder-lead-ok">OK</button>' +
+        '</form>' +
+        '<p class="reminder-lead-error" role="alert" hidden></p>' +
+        '<div class="reminder-sep" role="separator"></div>' +
+        `<button type="button" class="reminder-option reminder-off"><span class="reminder-option-text">Désactivé</span>${CHECK_SVG}</button>`;
+
+    const form = menu.querySelector('.reminder-lead-form');
+    const hoursInput = form.elements.hours;
+    const minsInput = form.elements.mins;
+    const errorEl = menu.querySelector('.reminder-lead-error');
+    const offBtn = menu.querySelector('.reminder-off');
+
+    const isOff = () => settings.at === null && settings.lead === null;
+    const hhmm = (mins) => `${pad2(Math.floor(mins / 60))}:${pad2(mins % 60)}`;
+
+    function showError(message) {
+        errorEl.textContent = message;
+        errorEl.hidden = !message;
+        [hoursInput, minsInput].forEach((el) => el.classList.toggle('is-invalid', Boolean(message)));
     }
 
-    function build() {
-        const title = document.createElement('p');
-        title.className = 'reminder-menu-title';
-        title.textContent = 'Me prévenir avant chaque prière';
-        menu.appendChild(title);
-
-        for (const opt of options) {
-            if (opt.value === null) {
-                menu.appendChild(buildCustomRow());
-                const sep = document.createElement('div');
-                sep.className = 'reminder-sep';
-                sep.setAttribute('role', 'separator');
-                menu.appendChild(sep);
-            }
-            const item = document.createElement('div');
-            item.className = 'reminder-option';
-            item.id = optionId(opt.value);
-            item.setAttribute('role', 'option');
-            item.dataset.value = opt.value === null ? 'off' : String(opt.value);
-            item.innerHTML = `<span class="reminder-option-text"></span>${CHECK_SVG}`;
-            item.querySelector('.reminder-option-text').textContent = opt.text;
-            item.addEventListener('click', () => select(opt.value));
-            item.addEventListener('mousemove', () => setActive(item));
-            menu.appendChild(item);
+    function fillInputs() {
+        if (settings.at !== null) {
+            hoursInput.value = pad2(Math.floor(settings.at / 60));
+            minsInput.value = pad2(settings.at % 60);
+        } else {
+            hoursInput.value = '';
+            minsInput.value = '';
         }
-    }
-
-    // Durée personnalisée : saisie libre en minutes (1 à 120)
-    const CUSTOM_MIN = 1;
-    const CUSTOM_MAX = 120;
-    let customInput = null;
-    let customRow = null;
-
-    function buildCustomRow() {
-        customRow = document.createElement('div');
-        customRow.className = 'reminder-option reminder-custom';
-        customRow.id = 'reminder-opt-custom';
-        customRow.setAttribute('role', 'option');
-        customRow.dataset.value = 'custom';
-        customRow.innerHTML =
-            '<span class="reminder-option-text">Personnalisé</span>' +
-            '<span class="reminder-custom-field">' +
-            `<input type="number" class="reminder-custom-input" min="${CUSTOM_MIN}" max="${CUSTOM_MAX}" step="1" inputmode="numeric" aria-label="Minutes avant la prière">` +
-            '<span class="reminder-custom-unit">min</span>' +
-            '<button type="button" class="reminder-custom-ok" aria-label="Valider le rappel personnalisé">OK</button>' +
-            '</span>' + CHECK_SVG;
-        customInput = customRow.querySelector('.reminder-custom-input');
-
-        const submit = () => {
-            const n = Math.round(Number(customInput.value));
-            if (!Number.isFinite(n) || n < CUSTOM_MIN || n > CUSTOM_MAX) {
-                customInput.classList.add('is-invalid');
-                customInput.focus();
-                return;
-            }
-            customInput.classList.remove('is-invalid');
-            select(n);
-        };
-
-        customRow.addEventListener('click', (e) => {
-            if (e.target.closest('.reminder-custom-ok')) return submit();
-            if (e.target !== customInput) customInput.focus();
-        });
-        customRow.addEventListener('mousemove', () => setActive(customRow));
-        customInput.addEventListener('input', () => customInput.classList.remove('is-invalid'));
-        customInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                submit();
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                menu.hidePopover();
-            }
-            e.stopPropagation(); // la saisie ne doit pas déplacer la sélection du menu
-        });
-        return customRow;
-    }
-
-    const isCustom = (value) => value !== null && !choices.includes(value);
-
-    const items = () => [...menu.querySelectorAll('.reminder-option')];
-
-    function setActive(item) {
-        items().forEach((el) => el.classList.toggle('is-active', el === item));
-        menu.setAttribute('aria-activedescendant', item.id);
-        item.scrollIntoView({ block: 'nearest' });
+        showError('');
     }
 
     function render() {
-        label.textContent = current === null ? 'Rappel désactivé' : `Rappel ${current} min avant`;
-        trigger.classList.toggle('is-off', current === null);
-        const selectedId = isCustom(current) ? customRow.id : optionId(current);
-        items().forEach((el) => {
-            el.setAttribute('aria-selected', String(el.id === selectedId));
-        });
-        if (document.activeElement !== customInput) {
-            customInput.value = isCustom(current) ? String(current) : '';
-            customInput.placeholder = String(current ?? DEFAULT_CUSTOM_PLACEHOLDER);
-        }
+        if (settings.at !== null) label.textContent = `Rappel à ${hhmm(settings.at)}`;
+        else if (settings.lead !== null) label.textContent = `Rappel ${settings.lead} min avant`;
+        else label.textContent = 'Rappel désactivé';
+        trigger.classList.toggle('is-off', isOff());
+        offBtn.setAttribute('aria-pressed', String(isOff()));
     }
-
-    const DEFAULT_CUSTOM_PLACEHOLDER = 25;
 
     function position() {
         const r = trigger.getBoundingClientRect();
@@ -128,41 +68,52 @@ function createReminderPicker({ trigger, label, menu, choices, onChange }) {
         menu.style.left = `${Math.max(VIEWPORT_MARGIN_PX, left)}px`;
     }
 
-    function select(value) {
-        const changed = value !== current;
-        current = value;
+    function commit(at) {
+        const changed = at !== settings.at || (at === null && !isOff());
+        settings = { at, lead: null };
         render();
         menu.hidePopover();
-        if (changed) onChange(value);
+        if (changed) onChange(at);
     }
+
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (hoursInput.value === '') return showError('Saisissez l\'heure du rappel.');
+        const h = Number(hoursInput.value);
+        const m = minsInput.value === '' ? 0 : Number(minsInput.value);
+        if (!Number.isInteger(h) || h < 0 || h > 23 || !Number.isInteger(m) || m < 0 || m > 59) {
+            return showError('Heure invalide (00:00 à 23:59).');
+        }
+        commit(h * 60 + m);
+    });
+
+    [hoursInput, minsInput].forEach((el) => {
+        el.addEventListener('input', () => showError(''));
+        el.addEventListener('focus', () => el.select());
+    });
+    // Deux chiffres saisis pour l'heure → passage automatique aux minutes
+    hoursInput.addEventListener('input', () => {
+        if (hoursInput.value.length >= 2) minsInput.focus();
+    });
+
+    offBtn.addEventListener('click', () => commit(null));
+
+    menu.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            menu.hidePopover();
+        }
+    });
 
     menu.addEventListener('toggle', (e) => {
         const isOpen = e.newState === 'open';
         trigger.setAttribute('aria-expanded', String(isOpen));
         if (isOpen) {
+            fillInputs();
             position();
-            setActive(isCustom(current) ? customRow : (menu.querySelector(`#${optionId(current)}`) || items()[0]));
-            menu.focus({ preventScroll: true });
+            hoursInput.focus({ preventScroll: true });
         } else if (menu.contains(document.activeElement) || document.activeElement === document.body) {
             trigger.focus({ preventScroll: true });
-        }
-    });
-
-    menu.addEventListener('keydown', (e) => {
-        const list = items();
-        const i = list.findIndex((el) => el.classList.contains('is-active'));
-        const moves = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: list.length - 1 };
-        if (e.key in moves) {
-            e.preventDefault();
-            setActive(list[(moves[e.key] + list.length) % list.length]);
-        } else if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            const active = list[i];
-            if (!active) return;
-            if (active === customRow) customInput.focus();
-            else select(active.dataset.value === 'off' ? null : Number(active.dataset.value));
-        } else if (e.key === 'Tab') {
-            menu.hidePopover();
         }
     });
 
@@ -174,12 +125,12 @@ function createReminderPicker({ trigger, label, menu, choices, onChange }) {
         }
     });
 
-    build();
     render();
 
     return {
+        /** @param {{ at: number|null, lead: number|null }} value */
         setValue(value) {
-            current = value;
+            settings = { at: value.at, lead: value.lead };
             render();
         }
     };

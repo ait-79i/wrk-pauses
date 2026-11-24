@@ -5,7 +5,7 @@
 const TICK_MS = 1000;
 
 const root = document.getElementById('host').attachShadow({ mode: 'open' });
-root.innerHTML = `<style>${OVERLAY_CSS}</style><div class="compact"><div class="veil"></div></div>`;
+root.innerHTML = `<style>${OVERLAY_CSS}</style><div class="veil"></div>`;
 const veil = root.querySelector('.veil');
 
 let stored = {};
@@ -26,8 +26,9 @@ function render() {
         });
         cardTheme = theme;
     }
-    card.update(alert);
-    document.title = `NOD TWADDA ! ${PRAYER_LABELS[alert.name]} ${minsToHM(alert.mins)}`;
+    const message = salatAlertMessage(stored);
+    card.update(alert, message);
+    document.title = `${message} ${alert.label || PRAYER_LABELS[alert.name]} ${minsToHM(alert.mins)}`;
 }
 
 chrome.storage.local.get([...SALAT_ALERT_KEYS, 'isRamadanMode'], (res) => {

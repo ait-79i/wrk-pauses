@@ -48,13 +48,13 @@ const reminderPicker = createReminderPicker({
     trigger: document.getElementById('reminderTrigger'),
     label: document.getElementById('reminderLabel'),
     menu: document.getElementById('reminderMenu'),
-    choices: ALERT_LEAD_CHOICES,
-    onChange: (lead) => chrome.storage.local.set({ salatAlertLead: lead })
+    // Heure fixe choisie ; « Désactivé » coupe aussi l'ancien rappel « X min avant »
+    onChange: (at) => chrome.storage.local.set(at === null ? { salatAlertAt: null, salatAlertLead: null } : { salatAlertAt: at })
 });
 const historyStatus = document.getElementById('historyStatus');
 
 // --- INITIALISATION ---
-chrome.storage.local.get([...DAY_KEYS, 'isRamadanMode', 'salatDay', 'salatError', 'salatAlertLead', DAY_RULES_KEY, 'fullscreenPause', 'targetOut', 'showSalat'], async (res) => {
+chrome.storage.local.get([...DAY_KEYS, 'isRamadanMode', 'salatDay', 'salatError', 'salatAlertLead', 'salatAlertAt', DAY_RULES_KEY, 'fullscreenPause', 'targetOut', 'showSalat'], async (res) => {
     applySalatVisibility(res.showSalat !== false);
     isRamadanMode = res.isRamadanMode || false;
     applyDayRulesConfig(res[DAY_RULES_KEY]); // règles configurées (ou défauts) avant tout calcul
@@ -75,8 +75,7 @@ chrome.storage.local.get([...DAY_KEYS, 'isRamadanMode', 'salatDay', 'salatError'
     fullscreenPause = res.fullscreenPause !== false;
     updateFullscreenToggleUI();
     targetOut = res.targetOut || null;
-    // Pas encore de réglage enregistré → même valeur par défaut que les onglets (10 min)
-    reminderPicker.setValue(res.salatAlertLead === undefined ? DEFAULT_ALERT_LEAD_MINS : res.salatAlertLead);
+    reminderPicker.setValue(salatAlertSettings(res));
 
     applyModeStyles();
     renderHistory();
@@ -118,9 +117,8 @@ chrome.storage.onChanged.addListener((changes) => {
     }
     if (changes.salatDay) salatDay = changes.salatDay.newValue || null;
     if (changes.salatError) salatError = changes.salatError.newValue || null;
-    if (changes.salatAlertLead) {
-        const lead = changes.salatAlertLead.newValue;
-        reminderPicker.setValue(lead === undefined ? DEFAULT_ALERT_LEAD_MINS : lead);
+    if (changes.salatAlertLead || changes.salatAlertAt) {
+        chrome.storage.local.get(['salatAlertLead', 'salatAlertAt'], (res) => reminderPicker.setValue(salatAlertSettings(res)));
     }
 });
 

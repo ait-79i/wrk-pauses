@@ -288,3 +288,8 @@ body {
     margin-top: 4px;
 }
 
+
+.alert-message-field { margin-top: 16px; }
+.alert-message-input { width: 100%; box-sizing: border-box; text-align: left; }
+
+.team-settings-actions { margin-top: 12px; }

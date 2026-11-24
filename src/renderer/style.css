@@ -1103,24 +1103,30 @@ body:has(.ramadan-active) {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    width: 100%;
     padding: 8px 10px;
+    border: none;
     border-radius: 8px;
+    font: inherit;
     font-size: 13px;
     font-weight: 500;
-    font-variant-numeric: tabular-nums;
+    color: inherit;
+    background: transparent;
     cursor: pointer;
 }
 
-.reminder-option.is-active {
+.reminder-option:hover,
+.reminder-option:focus-visible {
+    outline: none;
     background: var(--field-bg);
 }
 
-.reminder-option[aria-selected="true"] {
+.reminder-option[aria-pressed="true"] {
     font-weight: 700;
     color: var(--majorelle);
 }
 
-.ramadan-active .reminder-option[aria-selected="true"] {
+.ramadan-active .reminder-option[aria-pressed="true"] {
     color: var(--saffron);
 }
 
@@ -1128,72 +1134,94 @@ body:has(.ramadan-active) {
     visibility: hidden;
 }
 
-.reminder-option[aria-selected="true"] .reminder-check {
+.reminder-option[aria-pressed="true"] .reminder-check {
     visibility: visible;
 }
 
-.reminder-custom {
+.reminder-lead-form {
+    display: flex;
+    align-items: center;
     gap: 8px;
-    cursor: default;
+    padding: 4px 8px 6px;
 }
 
-.reminder-custom-field {
+.reminder-lead-field {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    margin-left: auto;
+    font-size: 12.5px;
+    color: var(--muted);
 }
 
-.reminder-custom-input {
-    width: 44px;
-    padding: 3px 5px;
+.reminder-lead-input {
+    width: 46px;
+    padding: 5px 4px;
     border: 1px solid var(--line);
-    border-radius: 6px;
+    border-radius: 7px;
     font: inherit;
-    font-size: 12.5px;
+    font-size: 14px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
     text-align: center;
-    color: inherit;
+    color: var(--text);
     background: var(--field-bg);
     -moz-appearance: textfield;
 }
 
-.reminder-custom-input::-webkit-outer-spin-button,
-.reminder-custom-input::-webkit-inner-spin-button {
+.reminder-lead-input::-webkit-outer-spin-button,
+.reminder-lead-input::-webkit-inner-spin-button {
     -webkit-appearance: none;
     margin: 0;
 }
 
-.reminder-custom-input:focus {
+.reminder-lead-input:focus {
     outline: none;
     border-color: var(--majorelle);
 }
 
-.reminder-custom-input.is-invalid {
+.reminder-lead-input.is-invalid {
     border-color: #d93a3a;
 }
 
-.reminder-custom-unit {
-    font-size: 12px;
+.reminder-time-sep {
+    font-size: 16px;
+    font-weight: 700;
     color: var(--muted);
 }
 
-.reminder-custom-ok {
-    padding: 3px 8px;
+.reminder-lead-ok {
+    margin-left: auto;
+    padding: 6px 12px;
     border: none;
-    border-radius: 6px;
+    border-radius: 7px;
     font: inherit;
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 700;
     color: #fff;
     background: var(--majorelle);
     cursor: pointer;
 }
 
-.ramadan-active .reminder-custom-input:focus {
+.reminder-lead-ok:focus-visible {
+    outline: 2px solid var(--majorelle);
+    outline-offset: 2px;
+}
+
+.reminder-lead-error {
+    margin: 0 8px 6px;
+    font-size: 11.5px;
+    color: #d93a3a;
+}
+
+.ramadan-active .reminder-lead-input {
+    color: #fff;
+}
+
+.ramadan-active .reminder-lead-input:focus {
     border-color: var(--saffron);
 }
 
-.ramadan-active .reminder-custom-ok {
+.ramadan-active .reminder-lead-ok {
     color: #1c1f66;
     background: var(--saffron);
 }
@@ -1243,4 +1271,320 @@ body:has(.ramadan-active) {
 
 .salat.is-unavailable .salat-caption {
     display: none;
+}
+
+/* ---------- Prière en groupe (équipe) ---------- */
+
+.team-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+}
+
+.team-panel[hidden] { display: none; }
+
+.team-invite,
+.team-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.team-title {
+    margin: 0;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.team-muted {
+    margin: 0;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.team-notice {
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 12.5px;
+    color: var(--saffron-ink);
+    background: #fdf3dc;
+}
+
+.team-error {
+    margin: 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--pomegranate);
+}
+
+.team-prayers {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.team-prayer {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.team-prayer + .team-prayer {
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+}
+
+.team-prayer-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.team-prayer-ar {
+    font-family: var(--font-kufi);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--majorelle);
+}
+
+.ramadan-active .team-prayer-ar { color: var(--saffron); }
+
+.team-prayer-latin {
+    font-size: 11.5px;
+    color: var(--muted);
+}
+
+.team-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.team-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 8px 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font: inherit;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    background: var(--field-bg);
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s;
+}
+
+.team-chip:hover:not(:disabled) { border-color: var(--majorelle); }
+.team-chip:disabled { opacity: 0.45; cursor: default; }
+.team-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.team-chip.is-selected {
+    color: #fff;
+    background: var(--majorelle);
+    border-color: var(--majorelle);
+    opacity: 1;
+}
+
+.ramadan-active .team-chip.is-selected {
+    color: var(--saffron-ink);
+    background: var(--saffron);
+    border-color: var(--saffron);
+}
+
+.team-chip-count {
+    min-width: 20px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 700;
+    text-align: center;
+    color: var(--saffron-ink);
+    background: var(--saffron);
+}
+
+.team-chip.is-selected .team-chip-count { background: #fff; color: var(--majorelle); }
+
+.team-jumua {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.team-prayer-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.team-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.team-form-row {
+    display: flex;
+    gap: 6px;
+}
+
+.team-input {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    font: inherit;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--field-bg);
+}
+
+.team-input:focus { outline: none; border-color: var(--focus); }
+
+.team-input--code {
+    flex: 0 0 96px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.team-form-links {
+    display: flex;
+    justify-content: space-between;
+}
+
+.team-btn {
+    padding: 7px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    background: var(--field-bg);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.team-btn:hover:not(:disabled) { background: var(--field-hover); }
+.team-btn:disabled { opacity: 0.6; cursor: default; }
+
+.team-btn--primary {
+    border-color: transparent;
+    color: var(--primary-btn-text);
+    background: var(--primary-btn);
+}
+
+.team-btn--primary:hover:not(:disabled) { background: var(--majorelle-deep); }
+.ramadan-active .team-btn--primary:hover:not(:disabled) { background: var(--saffron); filter: brightness(1.05); }
+
+.team-link {
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--majorelle);
+    cursor: pointer;
+}
+
+.ramadan-active .team-link { color: var(--saffron); }
+.team-link:disabled { opacity: 0.6; cursor: default; }
+.team-link:hover:not(:disabled) { text-decoration: underline; }
+
+/* Panneau d'équipe : discussion et publication des horaires */
+
+.team-header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.team-chat-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+}
+
+.team-badge {
+    min-width: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 17px;
+    text-align: center;
+    color: #fff;
+    background: var(--pomegranate);
+}
+
+/* Ramadan : texte sombre sur le rouge clair (contraste AA) */
+.ramadan-active .team-badge { color: #2a0a10; }
+
+.team-prayer-edit {
+    margin-left: auto;
+}
+
+.team-notice--action {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-weight: 600;
+}
+
+.ramadan-active .team-notice {
+    color: var(--saffron);
+    background: rgba(242, 182, 50, 0.12);
+}
+
+.team-publish {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.team-publish-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 6px;
+}
+
+.team-publish-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.team-publish-label {
+    min-width: 26px;
+    font-size: 12.5px;
+    font-weight: 700;
+}
+
+.team-input--time {
+    padding: 5px 6px;
+    font-variant-numeric: tabular-nums;
+}
+
+.ramadan-active .team-input--time { color-scheme: dark; }
+
+.team-publish-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 14px;
 }

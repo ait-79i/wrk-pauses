@@ -49,6 +49,7 @@ var OVERLAY_CSS = `
     }
     h1 {
         margin: 0;
+        overflow-wrap: anywhere;
         font-size: clamp(34px, 5vw, 54px); font-weight: 800; line-height: 1.05;
         letter-spacing: -0.01em;
         color: var(--title);
@@ -105,12 +106,13 @@ function createSalatCard(veil, onClose) {
         <div class="card" role="alertdialog" aria-modal="true" aria-labelledby="ps-title" aria-describedby="ps-detail">
             <div class="medallion" aria-hidden="true">🕌</div>
             <p class="arabic" lang="ar" dir="rtl" hidden>حان وقت الصلاة</p>
-            <h1 id="ps-title">NOD TWADDA !</h1>
+            <h1 id="ps-title"></h1>
             <p class="detail" id="ps-detail"></p>
             <p class="countdown" aria-live="off"></p>
             <button class="close" type="button">Fermer le rappel</button>
         </div>`;
     const els = {
+        title: veil.querySelector('#ps-title'),
         arabic: veil.querySelector('.arabic'),
         detail: veil.querySelector('.detail'),
         countdown: veil.querySelector('.countdown'),
@@ -120,10 +122,11 @@ function createSalatCard(veil, onClose) {
     els.close.addEventListener('click', () => { if (current) onClose(current); });
 
     return {
-        update(alert) {
+        update(alert, message = DEFAULT_ALERT_MESSAGE) {
             current = alert;
+            if (els.title.textContent !== message) els.title.textContent = message;
             const at = minsToHM(alert.mins);
-            const label = PRAYER_LABELS[alert.name];
+            const label = alert.label || PRAYER_LABELS[alert.name];
             const isTime = alert.secsUntil <= 0;
             els.arabic.hidden = !isTime;
             els.countdown.hidden = isTime;
@@ -139,9 +142,21 @@ function createSalatCard(veil, onClose) {
 
 /** Rappel à afficher maintenant (null si aucun, désactivé ou déjà fermé), à partir de chrome.storage */
 function pendingSalatAlert(stored) {
-    const lead = stored.salatAlertLead === undefined ? DEFAULT_ALERT_LEAD_MINS : stored.salatAlertLead;
-    const alert = activeSalatAlert(stored.salatDay || null, lead, moroccoNowSecs(), moroccoDateKey());
+    const nowSecs = moroccoNowSecs();
+    const today = moroccoDateKey();
+
+    // Groupe choisi dans l'équipe : prioritaire sur le rappel personnel
+    const teamAlert = teamSalatAlert(stored.teamDay || null, nowSecs, today);
+    if (teamAlert) return teamAlert.key !== stored.salatDismissedKey ? teamAlert : null;
+
+    const { at, lead } = salatAlertSettings(stored);
+    const day = stored.salatDay || null;
+    const alert = at !== null
+        ? fixedTimeSalatAlert(day, at, nowSecs, today)
+        : activeSalatAlert(day, lead, nowSecs, today);
+    // Prière déjà couverte par un groupe : son rappel de groupe la remplace
+    if (alert && teamCoveredPrayers(stored.teamDay || null, today).has(alert.name)) return null;
     return alert && alert.key !== stored.salatDismissedKey ? alert : null;
 }
 
-var SALAT_ALERT_KEYS = ['salatDay', 'salatAlertLead', 'salatDismissedKey'];
+var SALAT_ALERT_KEYS = ['salatDay', 'salatAlertLead', 'salatAlertAt', 'salatDismissedKey', 'salatAlertMessage', 'teamDay'];
