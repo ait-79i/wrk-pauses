@@ -22,6 +22,7 @@
     "release:major": "npm version major && git push --follow-tags"
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "exceljs": "^4.4.0",
     "sql.js": "^1.14.2"
   },
@@ -60,6 +61,14 @@
     },
     "portable": {
       "artifactName": "${productName}-Portable-${version}.${ext}"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ait-79i",
+        "repo": "wrk-pauses",
+        "releaseType": "release"
+      }
+    ]
   }
 }

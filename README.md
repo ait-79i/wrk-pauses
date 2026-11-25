@@ -166,6 +166,11 @@ npm run release:patch    # 1.0.1 → 1.0.2, crée le tag et pousse
 
 Les notes de version sont générées par [`scripts/generate-changelog.js`](scripts/generate-changelog.js) à partir des commits.
 
+**Tout est ensuite automatique** :
+- **Site** : le lien direct `https://pause.8hqi.com/telecharger/windows` (bouton de la page d'accueil) redirige vers l'installateur de la **dernière release GitHub** (`DESKTOP_GITHUB_REPO`, par défaut `ait-79i/wrk-pauses`, vérifiée toutes les 10 min). Aucun envoi manuel ; un fichier envoyé depuis **/admin › Application Windows** reste possible et l'emporte s'il est plus récent.
+- **Application installée** : elle vérifie les releases au démarrage puis toutes les 4 h (`electron-updater`, fichier `latest.yml` de la release), télécharge la nouvelle version en arrière-plan et l'installe à la fermeture ; la notification « Pause x.y.z est prête » permet de redémarrer tout de suite. Menu de la zone de notification : **Rechercher une mise à jour**.
+- Les ordinateurs encore en 1.0.1 (sans mise à jour automatique) doivent installer une fois la version suivante ; ensuite, les mises à jour se font seules.
+
 ---
 
 ## Données et confidentialité

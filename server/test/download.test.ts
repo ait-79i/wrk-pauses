@@ -92,3 +92,47 @@ describe.skipIf(!TEST_DB)('application Windows : téléchargement', () => {
         expect((await app.inject({ method: 'GET', url: '/api/download/windows' })).json()).toMatchObject({ version: '1.0.2' });
     });
 });
+
+describe.skipIf(!TEST_DB)('application Windows : dernière release GitHub', () => {
+    let app: FastifyInstance;
+    let db: Db;
+    let dir = '';
+    const realFetch = globalThis.fetch;
+
+    beforeAll(async () => {
+        const { clearGithubCache } = await import('../src/routes/download-api.js');
+        clearGithubCache();
+        dir = mkdtempSync(join(tmpdir(), 'pause-downloads-gh-'));
+        // Simule l'API GitHub : release v1.0.5 avec son installateur
+        globalThis.fetch = (async (url: string | URL) => {
+            if (String(url).includes('api.github.com/repos/demo/pause/releases/latest')) {
+                return new Response(JSON.stringify({
+                    published_at: '2026-11-20T10:00:00Z',
+                    assets: [
+                        { name: 'latest.yml', size: 300, browser_download_url: 'https://github.com/demo/pause/releases/download/v1.0.5/latest.yml' },
+                        { name: 'Pause-Setup-1.0.5.exe', size: 123000000, browser_download_url: 'https://github.com/demo/pause/releases/download/v1.0.5/Pause-Setup-1.0.5.exe' }
+                    ]
+                }), { status: 200, headers: { 'content-type': 'application/json' } });
+            }
+            return realFetch(url);
+        }) as typeof fetch;
+        const config = loadConfig({ ...process.env, DATABASE_URL: TEST_DB!, NODE_ENV: 'test', DOWNLOADS_DIR: dir, DESKTOP_GITHUB_REPO: 'demo/pause' });
+        db = createDb(config.DATABASE_URL);
+        app = await buildApp(db, config);
+    });
+
+    afterAll(async () => {
+        globalThis.fetch = realFetch;
+        await app?.close();
+        await db?.$disconnect();
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('propose la dernière release sans envoi manuel, et le lien direct y redirige', async () => {
+        expect((await app.inject({ method: 'GET', url: '/api/download/windows' })).json())
+            .toMatchObject({ available: true, version: '1.0.5', sizeBytes: 123000000, source: 'github' });
+        const dl = await app.inject({ method: 'GET', url: '/telecharger/windows' });
+        expect(dl.statusCode).toBe(302);
+        expect(dl.headers.location).toBe('https://github.com/demo/pause/releases/download/v1.0.5/Pause-Setup-1.0.5.exe');
+    });
+});

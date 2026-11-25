@@ -63,22 +63,90 @@ export async function listInstallers(dir: string): Promise<InstallerInfo[]> {
     return found.sort((a, b) => compareVersions(b.version, a.version));
 }
 
+/** Version proposée au téléchargement : fichier envoyé depuis /admin, ou dernière release GitHub */
+interface Candidate {
+    source: 'local' | 'github';
+    version: string;
+    sizeBytes: number | null;
+    updatedAt: string | null;
+    /** Fichier local (source « local ») ou adresse de l'asset (source « github ») */
+    file?: string;
+    url?: string;
+}
+
+const GITHUB_TTL_MS = 10 * 60_000;
+let githubCache: { at: number; repo: string; value: Candidate | null } | null = null;
+
+/** Vide le cache GitHub (tests) */
+export const clearGithubCache = (): void => { githubCache = null; };
+
+/**
+ * Dernière release GitHub contenant Pause-Setup-<version>.exe. Mise en cache 10 min
+ * (limite de 60 appels/h sans jeton) ; en cas d'échec, la dernière valeur connue est gardée.
+ */
+async function githubLatest(repo: string, log: (msg: string, err?: unknown) => void): Promise<Candidate | null> {
+    if (githubCache && githubCache.repo === repo && Date.now() - githubCache.at < GITHUB_TTL_MS) return githubCache.value;
+    let value: Candidate | null = githubCache?.repo === repo ? githubCache.value : null;
+    try {
+        const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+            headers: { accept: 'application/vnd.github+json', 'user-agent': 'pause-server' },
+            signal: AbortSignal.timeout(8000)
+        });
+        if (res.status === 404) value = null; // aucune release publiée
+        else if (!res.ok) throw new Error(`GitHub HTTP ${res.status}`);
+        else {
+            const release: any = await res.json();
+            const asset = (release.assets ?? []).find((a: any) => INSTALLER_RE.test(String(a.name)));
+            value = asset
+                ? {
+                    source: 'github',
+                    version: INSTALLER_RE.exec(asset.name)![1],
+                    sizeBytes: Number(asset.size) || null,
+                    updatedAt: asset.updated_at ?? release.published_at ?? null,
+                    url: String(asset.browser_download_url)
+                }
+                : null;
+        }
+    } catch (err) {
+        log('Releases GitHub injoignables : dernière version connue conservée.', err);
+    }
+    githubCache = { at: Date.now(), repo, value };
+    return value;
+}
+
 export function registerDownloadApi(app: FastifyInstance, { db, config }: { db: Db; config: Config }): void {
     const dir = config.DOWNLOADS_DIR ?? DEFAULT_DIR;
+    const log = (msg: string, err?: unknown) => app.log.warn({ err }, msg);
+
+    /** La version la plus récente entre le fichier envoyé depuis /admin et la dernière release GitHub */
+    async function resolveLatest(): Promise<Candidate | null> {
+        const [local] = await listInstallers(dir);
+        const candidates: Candidate[] = [];
+        if (local) candidates.push({ source: 'local', version: local.version, sizeBytes: local.sizeBytes, updatedAt: local.updatedAt, file: local.file });
+        if (config.DESKTOP_GITHUB_REPO) {
+            const gh = await githubLatest(config.DESKTOP_GITHUB_REPO, log);
+            if (gh) candidates.push(gh);
+        }
+        // À version égale, le fichier local l'emporte (servi depuis ce site)
+        candidates.sort((a, b) => compareVersions(b.version, a.version) || (a.source === 'local' ? -1 : 1));
+        return candidates[0] ?? null;
+    }
 
     // Corps binaires bruts (morceaux de l'installateur) : le flux est lu par la route elle-même
     app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
 
     app.get('/telecharger/windows', async (_req, reply) => {
-        const [latest] = await listInstallers(dir);
-        if (latest) {
+        const latest = await resolveLatest();
+        if (latest?.source === 'local') {
             reply
                 .header('Content-Type', 'application/vnd.microsoft.portable-executable')
                 .header('Content-Disposition', `attachment; filename="${latest.file}"`)
                 .header('Content-Length', String(latest.sizeBytes))
                 .header('Cache-Control', 'no-cache');
-            return reply.send(createReadStream(join(dir, latest.file)));
+            return reply.send(createReadStream(join(dir, latest.file!)));
         }
+        // Release GitHub : le téléchargement démarre directement depuis GitHub
+        if (latest?.source === 'github') return reply.header('Cache-Control', 'no-cache').redirect(latest.url!, 302);
         if (config.DESKTOP_DOWNLOAD_URL) return reply.redirect(config.DESKTOP_DOWNLOAD_URL, 302);
         return reply.code(404).type('text/html; charset=utf-8').send(
             '<!doctype html><meta charset="utf-8"><title>Pause</title>' +
@@ -89,14 +157,17 @@ export function registerDownloadApi(app: FastifyInstance, { db, config }: { db: 
     });
 
     app.get('/api/download/windows', async () => {
-        const [latest] = await listInstallers(dir);
+        const latest = await resolveLatest();
         if (latest) {
-            return { available: true, url: '/telecharger/windows', version: latest.version, sizeBytes: latest.sizeBytes, updatedAt: latest.updatedAt, external: false };
+            return {
+                available: true, url: '/telecharger/windows', version: latest.version, sizeBytes: latest.sizeBytes,
+                updatedAt: latest.updatedAt, external: false, source: latest.source
+            };
         }
         if (config.DESKTOP_DOWNLOAD_URL) {
-            return { available: true, url: '/telecharger/windows', version: null, sizeBytes: null, updatedAt: null, external: true };
+            return { available: true, url: '/telecharger/windows', version: null, sizeBytes: null, updatedAt: null, external: true, source: 'url' };
         }
-        return { available: false, url: '/telecharger/windows', version: null, sizeBytes: null, updatedAt: null, external: false };
+        return { available: false, url: '/telecharger/windows', version: null, sizeBytes: null, updatedAt: null, external: false, source: null };
     });
 
     // Envoi par morceaux : offset 0 recommence le fichier ; le dernier morceau publie la nouvelle version

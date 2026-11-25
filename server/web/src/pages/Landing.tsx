@@ -50,10 +50,7 @@ export function LandingPage() {
         <div className="lp">
             <header className="lp-bar">
                 <a className="lp-brand" href="/"><span className="lp-brand-mark"><ZelligeMark /></span>Pause</a>
-                <nav aria-label="Liens">
-                    <a className="lp-bar-link" href="#installer">Installer</a>
-                    <a className="lp-bar-link lp-bar-admin" href="/admin">Espace admin</a>
-                </nav>
+                <a className="lp-bar-link lp-bar-install" href="#installer">Installer</a>
             </header>
 
             <main>
@@ -157,7 +154,7 @@ export function LandingPage() {
 
             <footer className="lp-foot">
                 <span>Pause, pour prier ensemble au bureau.</span>
-                <a href="/admin">Espace admin</a>
+                <a href="#lp-title">Revenir en haut</a>
             </footer>
         </div>
     );

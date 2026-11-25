@@ -11,6 +11,7 @@ import { Store } from './store';
 import { createHistory, HistoryManager } from './history';
 import { SyncManager } from './sync';
 import { TeamManager } from './team';
+import { checkForUpdateNow, startAutoUpdate } from './updater';
 import { generateXlsx, generateCsv } from './exporter';
 import { StoreChanges, TeamNotice } from './types';
 
@@ -80,6 +81,8 @@ app.whenReady().then(() => {
     // Démarrage du planificateur de synchronisation automatique
     syncManager.startSchedule();
     teamManager.start();
+    // Mises à jour automatiques depuis les releases GitHub (application installée seulement)
+    startAutoUpdate({ beforeQuitForUpdate: () => { quitting = true; }, iconPath: path.join(ROOT_DIR, 'build', 'icon.png') });
     setInterval(dispatchChooseScreens, 30_000);
     dispatchChooseScreens();
     // Sortie de veille : la connexion temps réel est souvent morte sans le savoir
@@ -188,6 +191,15 @@ function createTray(): void {
             label: 'Synchroniser maintenant',
             click: () => {
                 syncManager.sync().catch((err) => console.error('[Tray] Erreur synchro :', err));
+            }
+        },
+        {
+            label: 'Rechercher une mise à jour',
+            click: async () => {
+                const message = await checkForUpdateNow();
+                if (Notification.isSupported()) {
+                    new Notification({ title: 'Mise à jour de Pause', body: message, icon: path.join(ROOT_DIR, 'build', 'icon.png') }).show();
+                }
             }
         },
         { type: 'separator' },

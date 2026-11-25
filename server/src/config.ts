@@ -21,6 +21,11 @@ const schema = z.object({
     SESSION_DAYS: z.coerce.number().int().positive().default(7),
     /** Dossier des installateurs Windows envoyés depuis /admin (volume persistant en production) */
     DOWNLOADS_DIR: z.preprocess(emptyToUndefined, z.string().optional()),
+    /**
+     * Dépôt GitHub public dont les releases contiennent l'installateur (ex. ait-79i/wrk-pauses) :
+     * la dernière release est proposée automatiquement, sans envoi manuel depuis /admin.
+     */
+    DESKTOP_GITHUB_REPO: z.preprocess(emptyToUndefined, z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'DESKTOP_GITHUB_REPO attendu au format propriétaire/dépôt').optional()),
     /** Lien de secours vers l'installateur (ex. release GitHub/GitLab) si aucun fichier n'a été envoyé */
     DESKTOP_DOWNLOAD_URL: z.preprocess(emptyToUndefined, z.string().url('DESKTOP_DOWNLOAD_URL doit être une adresse complète (https://…)').optional())
 });
