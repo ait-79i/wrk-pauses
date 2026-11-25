@@ -19,6 +19,19 @@
     const offlineEl = document.getElementById('chatOffline');
     const announceEl = document.getElementById('chatAnnounce');
 
+    // Discussion ancrée à droite de la fenêtre principale : bouton et touche Échap pour la refermer
+    const docked = new URLSearchParams(location.search).get('docked') === '1';
+    if (docked && window.psChat.closeDock) {
+        const closeBtn = document.getElementById('chatClose');
+        closeBtn.hidden = false;
+        closeBtn.addEventListener('click', () => window.psChat.closeDock());
+        // Échap ferme d'abord un choix de réaction ou une réponse en cours (gérés plus bas), sinon la discussion
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !e.defaultPrevented && state.pickerFor === null && !state.replyTo) window.psChat.closeDock();
+        });
+        document.documentElement.classList.add('is-docked');
+    }
+
     const state = {
         team: null,
         teamDay: null,

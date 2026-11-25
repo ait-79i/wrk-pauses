@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <!-- Noms de groupes venus du serveur : rien d'autre que les fichiers de l'application et les polices -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+    <title>Choisissez votre groupe — Pause</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Reem+Kufi:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="choose.css">
+</head>
+<body>
+    <!-- Écran « Choisissez votre groupe » : rempli par choose.js (vocabulaire : GLOSSARY.md) -->
+    <main class="choose" id="chooseApp" aria-labelledby="chooseTitle">
+        <section class="choose-card">
+            <p id="choosePrayerAr" class="choose-ar" lang="ar" dir="rtl"></p>
+            <h1 id="chooseTitle" class="choose-title"></h1>
+            <p id="chooseSub" class="choose-sub"></p>
+            <div id="chooseGroups" class="choose-groups" role="group" aria-labelledby="chooseTitle"></div>
+            <p id="chooseError" class="choose-error" role="alert" hidden></p>
+            <button type="button" id="chooseSkip" class="choose-skip">Je ne prie pas avec un groupe</button>
+        </section>
+    </main>
+    <script src="../shared/salat-core.js"></script>
+    <script src="choose.js"></script>
+</body>
+</html>

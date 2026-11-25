@@ -147,7 +147,10 @@ describe.skipIf(!TEST_DB)('API équipes (intégration)', () => {
 
         const ok = await member(azedine, 'POST', '/api/app/publish', { date: monday, prayer: 'ASR', slots: [{ groupId: hommes.g1, time: '15:45' }] });
         expect(ok.statusCode).toBe(200);
-        expect((await member(azedine, 'GET', '/api/app/me')).json().canPublish).toBe(true);
+        const me = (await member(azedine, 'GET', '/api/app/me')).json();
+        expect(me.canPublish).toBe(true);
+        // Code d'accès de sa catégorie, à partager avec des collègues
+        expect(me.accessCode).toEqual({ code: hommes.code, expiresAt: null });
     });
 
     it('retirer G2 des horaires efface les choix de G2', async () => {

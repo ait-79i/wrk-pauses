@@ -3,3 +3,4 @@ dist/
 src/generated/
 web/dist/
 .env
+downloads/

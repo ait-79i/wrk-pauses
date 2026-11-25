@@ -60,7 +60,35 @@ body {
     font-weight: 700;
 }
 
+/* Ancrée à droite de la fenêtre principale : trait de séparation et bouton de fermeture */
+.is-docked .chat {
+    border-left: 1px solid var(--line);
+}
+
+.chat-close {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    margin-left: 4px;
+    border: none;
+    border-radius: 50%;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1;
+    color: var(--muted);
+    background: transparent;
+    cursor: pointer;
+    align-self: center;
+}
+
+.chat-close:hover { color: var(--text); background: var(--field-bg); }
+.chat-close:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.chat-close[hidden] { display: none; }
+
 .chat-team {
+    flex: 1;
+    min-width: 0;
+    text-align: right;
     overflow: hidden;
     font-size: 12px;
     color: var(--muted);

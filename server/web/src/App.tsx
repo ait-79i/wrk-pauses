@@ -5,8 +5,9 @@ import { AccountsPage } from './pages/Accounts';
 import { AuditPage } from './pages/Audit';
 import { LoginPage } from './pages/Login';
 import { OverviewPage } from './pages/Overview';
+import { DesktopAppPage } from './pages/DesktopApp';
 import { TeamPage } from './pages/Team';
-import { Link, NavContext, useData, usePath } from './ui';
+import { ADMIN_BASE, Link, NavContext, useData, usePath } from './ui';
 
 export function App() {
     const [me, setMe] = useState<Me | null>(null);
@@ -27,13 +28,14 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
     let page;
     if (teamMatch) page = <TeamPage key={teamMatch[1]} teamId={Number(teamMatch[1])} tab={teamMatch[2] ?? 'horaires'} superAdmin={superAdmin} />;
     else if (path === '/comptes' && superAdmin) page = <AccountsPage />;
+    else if (path === '/application' && superAdmin) page = <DesktopAppPage />;
     else if (path === '/journal') page = <AuditPage teams={overview.data?.teams ?? []} />;
     else if (path === '/compte') page = <AccountPage me={me} />;
     else page = <OverviewPage overview={overview} superAdmin={superAdmin} />;
 
     const logout = async () => {
         await api('POST', '/auth/logout').catch(() => {});
-        window.history.replaceState(null, '', '/');
+        window.history.replaceState(null, '', ADMIN_BASE);
         onLogout();
     };
 
@@ -64,6 +66,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
                     ))}
                     <p className="nav-label">Administration</p>
                     {superAdmin && <Link to="/comptes" className="nav-link" current={path === '/comptes'}>Comptes admin</Link>}
+                    {superAdmin && <Link to="/application" className="nav-link" current={path === '/application'}>Application Windows</Link>}
                     <Link to="/journal" className="nav-link" current={path === '/journal'}>Journal d'activité</Link>
                     <Link to="/compte" className="nav-link" current={path === '/compte'}>Mon compte</Link>
                     <div className="sidebar-foot">

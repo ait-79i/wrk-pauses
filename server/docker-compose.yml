@@ -14,6 +14,11 @@ services:
       - SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL}
       - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD}
       - LOCAL_OFFSET_HOURS=${LOCAL_OFFSET_HOURS:-0}
+      # Facultatif : lien vers l'installateur si aucun fichier n'a été envoyé depuis /admin
+      - DESKTOP_DOWNLOAD_URL=${DESKTOP_DOWNLOAD_URL:-}
+    volumes:
+      # Installateurs Windows envoyés depuis /admin : conservés d'un déploiement à l'autre
+      - pause-downloads:/app/downloads
     depends_on:
       mysql:
         condition: service_healthy
@@ -44,3 +49,4 @@ services:
 
 volumes:
   pause-mysql-data:
+  pause-downloads:

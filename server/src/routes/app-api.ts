@@ -119,11 +119,20 @@ export function registerAppApi(app: FastifyInstance, { db, config, hub }: { db: 
             where: { id: auth.id },
             include: { team: true, category: true, roles: true }
         });
+        // Code d'accès actuel de sa catégorie, pour inviter des collègues (membres actifs seulement)
+        const now = new Date();
+        const code = member.status === 'ACTIVE'
+            ? await db.accessCode.findFirst({
+                where: { categoryId: member.categoryId, revokedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+                orderBy: { createdAt: 'desc' }
+            })
+            : null;
         return {
             member: { id: member.id, name: member.name, status: member.status },
             team: { id: member.team.id, name: member.team.name, city: member.team.city, country: member.team.country },
             category: { id: member.category.id, name: member.category.name, jumuaEnabled: member.category.jumuaEnabled },
-            canPublish: canPublish(scopeFrom(member.roles), member.category)
+            canPublish: canPublish(scopeFrom(member.roles), member.category),
+            accessCode: code ? { code: code.code, expiresAt: code.expiresAt ? code.expiresAt.toISOString() : null } : null
         };
     });
 

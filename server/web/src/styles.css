@@ -851,3 +851,69 @@ button.msg-quote:hover { border-left-color: var(--majorelle); }
 .msg-quote-text { unicode-bidi: plaintext; }
 .msg-mention-inline { unicode-bidi: isolate; font-weight: 600; }
 .chat-notice { margin: 0; padding: 6px 14px; }
+
+/* ------------------------------------------------------------------ Application Windows (envoi) */
+
+.dropzone {
+    display: grid;
+    place-items: center;
+    min-height: 110px;
+    padding: 20px;
+    border: 2px dashed var(--line-strong);
+    border-radius: var(--radius-l);
+    text-align: center;
+    color: var(--ink-soft);
+    background: #fafbff;
+    cursor: pointer;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+
+.dropzone:hover,
+.dropzone.is-dragging { border-color: var(--majorelle); background: var(--majorelle-tint); }
+.dropzone.has-file { border-style: solid; border-color: var(--majorelle); }
+.dropzone:focus-within { outline: 2px solid var(--majorelle); outline-offset: 2px; }
+
+.upload-progress {
+    position: relative;
+    height: 28px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--paper);
+    border: 1px solid var(--line);
+}
+
+.upload-progress span {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--saffron);
+    transition: width 0.3s ease;
+}
+
+.upload-progress em {
+    position: relative;
+    display: grid;
+    place-items: center;
+    height: 100%;
+    font-style: normal;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--saffron-ink);
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+code {
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    background: var(--paper);
+}

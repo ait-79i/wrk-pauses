@@ -238,7 +238,9 @@ export class TeamManager extends EventEmitter {
                     teamName: me.team.name,
                     categoryId: me.category.id,
                     categoryName: me.category.name,
-                    canPublish: Boolean(me.canPublish)
+                    canPublish: Boolean(me.canPublish),
+                    accessCode: me.accessCode?.code ?? null,
+                    accessCodeExpiresAt: me.accessCode?.expiresAt ?? null
                 };
                 this.store.set({ team });
                 this.lastProfile = Date.now();

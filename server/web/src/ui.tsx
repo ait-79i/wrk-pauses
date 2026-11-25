@@ -5,16 +5,25 @@ import { ApiError } from './api';
 
 // ------------------------------------------------------------------ Navigation (History API)
 
+/** Le tableau de bord vit sous /admin ; ses chemins internes (« /equipes/1 ») restent sans préfixe */
+export const ADMIN_BASE = '/admin';
+
+/** /admin/equipes/1 → /equipes/1 ; /admin → / */
+export const adminPath = (pathname: string): string => pathname.replace(/^\/admin(?=\/|$)/, '') || '/';
+
+/** /equipes/1 → /admin/equipes/1 ; / → /admin */
+export const adminHref = (to: string): string => (to === '/' ? ADMIN_BASE : `${ADMIN_BASE}${to}`);
+
 export function usePath(): [string, (to: string) => void] {
-    const [path, setPath] = useState(window.location.pathname);
+    const [path, setPath] = useState(adminPath(window.location.pathname));
     useEffect(() => {
-        const onPop = () => setPath(window.location.pathname);
+        const onPop = () => setPath(adminPath(window.location.pathname));
         window.addEventListener('popstate', onPop);
         return () => window.removeEventListener('popstate', onPop);
     }, []);
     const navigate = useCallback((to: string) => {
-        if (to === window.location.pathname) return;
-        window.history.pushState(null, '', to);
+        if (adminHref(to) === window.location.pathname) return;
+        window.history.pushState(null, '', adminHref(to));
         setPath(to);
         window.scrollTo(0, 0);
     }, []);
@@ -27,7 +36,7 @@ export function Link({ to, children, className, current }: { to: string; childre
     const navigate = useContext(NavContext);
     return (
         <a
-            href={to}
+            href={adminHref(to)}
             className={className}
             aria-current={current ? 'page' : undefined}
             onClick={(e) => {

@@ -34,6 +34,105 @@ export function CategoriesTab({ team, reload }: { team: TeamDetail; reload: () =
     );
 }
 
+type CategoryRole = 'CATEGORY_ADMIN' | 'SCHEDULER';
+const CATEGORY_ROLES: { role: CategoryRole; label: string }[] = [
+    { role: 'CATEGORY_ADMIN', label: 'Admin de catégorie' },
+    { role: 'SCHEDULER', label: 'Responsable horaires' }
+];
+
+/**
+ * Admins de catégorie et responsables horaires, gérés depuis la carte de la catégorie.
+ * Même route que la fenêtre « Rôles » de l'onglet Membres : les autres rôles du membre sont conservés.
+ */
+function CategoryManagers({ team, category: c, reload }: { team: TeamDetail; category: Category; reload: () => void }) {
+    const { run, busy } = useAction();
+    const [memberId, setMemberId] = useState('');
+    const [role, setRole] = useState<CategoryRole>('CATEGORY_ADMIN');
+
+    const holders = team.members.flatMap((m) => m.roles
+        .filter((r) => r.categoryId === c.id && r.role !== 'TEAM_ADMIN')
+        .map((r) => ({ member: m, role: r.role as CategoryRole })));
+    // Membres actifs de l'équipe, ceux de la catégorie en premier
+    const candidates = team.members
+        .filter((m) => m.status === 'ACTIVE')
+        .sort((a, b) => Number(b.categoryId === c.id) - Number(a.categoryId === c.id) || a.name.localeCompare(b.name, 'fr'));
+
+    const saveRoles = (member: TeamDetail['members'][number], roles: TeamDetail['members'][number]['roles'], success: string) =>
+        run(() => api('PUT', `/members/${member.id}/roles`, { roles }), success).then((ok) => { if (ok !== undefined) reload(); });
+
+    const add = () => {
+        const member = team.members.find((m) => m.id === Number(memberId));
+        if (!member) return;
+        if (member.roles.some((r) => r.role === role && r.categoryId === c.id)) return;
+        const label = CATEGORY_ROLES.find((x) => x.role === role)!.label.toLowerCase();
+        void saveRoles(member, [...member.roles, { role, categoryId: c.id }], `${member.name} est maintenant ${label} de ${c.name}`);
+        setMemberId('');
+    };
+
+    return (
+        <div className="stack" style={{ gap: 8 }}>
+            <h3>Responsables</h3>
+            <p className="muted small">
+                L'admin de catégorie gère les groupes, la limite, Jumu'a, les horaires et la discussion de {c.name}.
+                Le responsable horaires publie seulement les horaires. Ils agissent depuis l'application ;
+                pour leur ouvrir ce tableau de bord, utilisez « Rôles » puis « créer un accès » dans l'onglet Membres.
+            </p>
+            {holders.length === 0
+                ? <p className="muted small">Aucun responsable pour l'instant.</p>
+                : (
+                    <div className="chip-list">
+                        {holders.map(({ member, role: r }) => (
+                            <span key={`${member.id}-${r}`} className="group-chip">
+                                {member.name}
+                                <span className="badge badge-role">{CATEGORY_ROLES.find((x) => x.role === r)!.label}</span>
+                                <button
+                                    className="icon-btn"
+                                    aria-label={`Retirer le rôle de ${member.name}`}
+                                    disabled={busy}
+                                    onClick={() => saveRoles(
+                                        member,
+                                        member.roles.filter((x) => !(x.role === r && x.categoryId === c.id)),
+                                        `Rôle retiré à ${member.name}`
+                                    )}
+                                >✕</button>
+                            </span>
+                        ))}
+                    </div>
+                )}
+            {candidates.length === 0 ? (
+                <p className="muted small">Personne n'a encore rejoint l'équipe : partagez le code d'accès ci-dessous, puis revenez nommer un responsable.</p>
+            ) : (
+                <div className="row">
+                    <select
+                        className="select"
+                        style={{ width: 'auto', minWidth: 180 }}
+                        value={memberId}
+                        aria-label={`Membre à nommer responsable de ${c.name}`}
+                        onChange={(e) => setMemberId(e.target.value)}
+                    >
+                        <option value="">Choisir un membre</option>
+                        {candidates.map((m) => (
+                            <option key={m.id} value={m.id}>
+                                {m.name}{m.categoryId !== c.id ? ` (${team.categories.find((x) => x.id === m.categoryId)?.name ?? ''})` : ''}
+                            </option>
+                        ))}
+                    </select>
+                    <select
+                        className="select"
+                        style={{ width: 'auto' }}
+                        value={role}
+                        aria-label="Rôle"
+                        onChange={(e) => setRole(e.target.value as CategoryRole)}
+                    >
+                        {CATEGORY_ROLES.map((x) => <option key={x.role} value={x.role}>{x.label}</option>)}
+                    </select>
+                    <button className="btn btn-primary btn-small" disabled={!memberId || busy} onClick={add}>Ajouter</button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 function CategoryPanel({ team, category: c, reload }: { team: TeamDetail; category: Category; reload: () => void }) {
     const { run } = useAction();
     const toast = useToast();
@@ -108,6 +207,8 @@ function CategoryPanel({ team, category: c, reload }: { team: TeamDetail; catego
                     </label>
                 </div>
             )}
+
+            {team.canManageTeam && <CategoryManagers team={team} category={c} reload={reload} />}
 
             {team.canManageTeam && (
                 <div className="stack" style={{ gap: 8 }}>

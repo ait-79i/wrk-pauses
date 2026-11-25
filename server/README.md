@@ -34,10 +34,10 @@ Sauvegardes : le volume `pause-mysql-data` contient toutes les données ; progra
 ## Développement
 
 ```bash
-docker run -d --name pause-mysql-dev -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=pause -p 3307:3306 mysql:8.4
+docker run -d --name pause-mysql-dev -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=pause -p 3308:3306 mysql:8.4
 cp .env.example .env            # puis renseignez SUPERADMIN_*
 npm ci
-DATABASE_URL=mysql://root:root@localhost:3307/pause npx prisma migrate deploy
+DATABASE_URL=mysql://root:root@localhost:3308/pause npx prisma migrate deploy
 npm run dev                                             # API sur http://localhost:3100 (lit .env)
 cd web && npm ci && npm run dev                         # tableau de bord sur http://localhost:5173
 ```
@@ -47,7 +47,7 @@ Application Windows contre ce serveur local : lancer avec `PAUSE_SERVER_URL=http
 Tests (base `pause_test` dédiée, vidée à chaque lancement) :
 
 ```bash
-TEST_DATABASE_URL=mysql://root:root@localhost:3307/pause_test npx vitest run
+TEST_DATABASE_URL=mysql://root:root@localhost:3308/pause_test npx vitest run
 ```
 
 Sous Windows, lancez les tests depuis un chemin avec la lettre de lecteur en majuscule (`E:\…`) : sinon Vitest charge deux fois ses modules.
@@ -55,7 +55,7 @@ Sous Windows, lancez les tests depuis un chemin avec la lettre de lecteur en maj
 ## Modifier le schéma
 
 ```bash
-DATABASE_URL=mysql://root:root@localhost:3307/pause npx prisma migrate dev --name <changement>
+DATABASE_URL=mysql://root:root@localhost:3308/pause npx prisma migrate dev --name <changement>
 ```
 
 Commitez le dossier `prisma/migrations` : la production l'applique au démarrage.

@@ -185,6 +185,44 @@
         return el('div', { class: 'team-prayer' }, head, el('div', { class: 'team-chips' }, chips), footer);
     }
 
+    // ---------------------------------------------------------------- Code à partager
+
+    /** Copie dans le presse-papiers (API moderne, sinon sélection + copie) */
+    async function copyText(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch {
+            const area = el('textarea', { 'aria-hidden': 'true', style: 'position:fixed;opacity:0' });
+            area.value = text;
+            document.body.append(area);
+            area.select();
+            const ok = document.execCommand('copy');
+            area.remove();
+            return ok;
+        }
+    }
+
+    /** Code d'accès de la catégorie, pour que le membre invite ses collègues */
+    function renderShareCode(team) {
+        const until = team.accessCodeExpiresAt
+            ? ` (valable jusqu'au ${new Date(team.accessCodeExpiresAt).toLocaleDateString('fr-FR')})`
+            : '';
+        const btn = el('button', {
+            type: 'button', class: 'team-link team-code-copy',
+            'aria-label': `Copier le code d'accès ${team.accessCode}`
+        }, 'Copier');
+        btn.addEventListener('click', async () => {
+            const ok = await copyText(team.accessCode);
+            btn.textContent = ok ? 'Copié' : 'Copie impossible';
+            setTimeout(() => { btn.textContent = 'Copier'; }, 2000);
+        });
+        return el('span', {
+            class: 'team-code',
+            title: `Donnez ce code à vos collègues : ils le saisissent dans Pause pour rejoindre ${team.categoryName}${until}.`
+        }, el('span', { class: 'team-code-label' }, 'Code'), el('span', { class: 'team-code-value' }, team.accessCode), btn);
+    }
+
     // ---------------------------------------------------------------- Rendu
 
     function render() {
@@ -206,7 +244,9 @@
             root.append(el('div', { class: 'team-header' },
                 el('div', { class: 'team-header-text' },
                     el('p', { class: 'team-title' }, `${team.categoryName}, ${team.teamName}`),
-                    el('span', { class: 'team-muted' }, team.memberName)),
+                    el('div', { class: 'team-who' },
+                        el('span', { class: 'team-muted' }, team.memberName),
+                        team.status === 'ACTIVE' && team.accessCode ? renderShareCode(team) : null)),
                 team.status === 'ACTIVE' && window.psTeam.openChat
                     ? el('button', {
                         type: 'button', class: 'team-btn team-chat-btn', onclick: () => window.psTeam.openChat(),

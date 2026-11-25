@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
 // Configuration lue dans l'environnement (variables Coolify en production).
+
+/** Docker Compose transmet « VAR= » quand la variable n'est pas définie : vide = absente */
+const emptyToUndefined = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
+
 const schema = z.object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     PORT: z.coerce.number().int().positive().default(3000),
@@ -14,7 +18,11 @@ const schema = z.object({
     /** Décalage horaire des équipes par rapport à UTC (Maroc : GMT officiel → 0) */
     LOCAL_OFFSET_HOURS: z.coerce.number().default(0),
     /** Durée des sessions du tableau de bord, en jours */
-    SESSION_DAYS: z.coerce.number().int().positive().default(7)
+    SESSION_DAYS: z.coerce.number().int().positive().default(7),
+    /** Dossier des installateurs Windows envoyés depuis /admin (volume persistant en production) */
+    DOWNLOADS_DIR: z.preprocess(emptyToUndefined, z.string().optional()),
+    /** Lien de secours vers l'installateur (ex. release GitHub/GitLab) si aucun fichier n'a été envoyé */
+    DESKTOP_DOWNLOAD_URL: z.preprocess(emptyToUndefined, z.string().url('DESKTOP_DOWNLOAD_URL doit être une adresse complète (https://…)').optional())
 });
 
 export type Config = z.infer<typeof schema>;

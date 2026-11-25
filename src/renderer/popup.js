@@ -353,6 +353,11 @@ function applySalatVisibility(show) {
 
 // Application Windows : la fenêtre prend la hauteur du contenu (bandeau prière masqué,
 // pauses ajoutées, formulaire ouvert…). Absent dans l'extension de navigateur.
+// Discussion ancrée à droite de la fenêtre : la colonne principale reste à gauche
+if (window.psSystem && window.psSystem.onChatDocked) {
+    window.psSystem.onChatDocked((docked) => document.documentElement.classList.toggle('is-chat-docked', docked));
+}
+
 if (window.psSystem && window.psSystem.fitHeight && 'ResizeObserver' in window) {
     let fitFrame = 0;
     new ResizeObserver(() => {

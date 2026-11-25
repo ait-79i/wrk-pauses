@@ -102,7 +102,13 @@ const psSystem = {
     getAutoLaunch: () => ipcRenderer.invoke('system:getAutoLaunch'),
     setAutoLaunch: (on: boolean) => ipcRenderer.invoke('system:setAutoLaunch', Boolean(on)),
     // Ajuste la hauteur de la fenêtre au contenu (fenêtre principale uniquement)
-    fitHeight: (height: number) => ipcRenderer.send('window:fitHeight', Number(height))
+    fitHeight: (height: number) => ipcRenderer.send('window:fitHeight', Number(height)),
+    // Discussion ancrée à droite ouverte ou fermée : la colonne principale reste alors à gauche
+    onChatDocked: (cb: (docked: boolean) => void): (() => void) => {
+        const handler = (_e: unknown, docked: boolean) => cb(Boolean(docked));
+        ipcRenderer.on('chat:docked', handler);
+        return () => ipcRenderer.removeListener('chat:docked', handler);
+    }
 };
 
 // Synchronisation (Historique & Configuration)

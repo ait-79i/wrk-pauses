@@ -1588,3 +1588,40 @@ body:has(.ramadan-active) {
     justify-content: flex-end;
     gap: 14px;
 }
+
+/* Code d'accès à partager, à côté du nom du membre */
+.team-who {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+}
+
+.team-code {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px 2px 8px;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.team-code-value {
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    user-select: all;
+}
+
+.team-code-copy {
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+}
+
+.team-code-copy:hover:not(:disabled) {
+    text-decoration: none;
+    background: var(--field-bg);
+}

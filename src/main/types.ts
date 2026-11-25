@@ -91,6 +91,9 @@ export interface TeamInfo {
     categoryName: string;
     /** Admin ou responsable horaires : peut publier les horaires */
     canPublish: boolean;
+    /** Code d'accès actuel de la catégorie, à partager avec des collègues (null : aucun code actif) */
+    accessCode?: string | null;
+    accessCodeExpiresAt?: string | null;
 }
 
 export interface TeamSlot {

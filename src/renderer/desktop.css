@@ -11,3 +11,8 @@ body {
     max-width: 476px;
     margin: 0 auto;
 }
+
+/* Discussion ancrée à droite : la colonne principale se cale à gauche, la discussion occupe la droite */
+.is-chat-docked .app {
+    margin: 0;
+}

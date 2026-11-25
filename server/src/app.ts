@@ -16,6 +16,8 @@ import { registerAdminApi } from './routes/admin-api.js';
 import { registerAppApi } from './routes/app-api.js';
 import { registerChatApi } from './routes/chat-api.js';
 import { registerStatsApi } from './routes/stats-api.js';
+import { registerDownloadApi } from './routes/download-api.js';
+import { startAutoPublisher } from './services/auto-publish.js';
 import { RealtimeHub } from './services/realtime.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -77,6 +79,16 @@ export async function buildApp(db: Db, config: Config): Promise<FastifyInstance>
     registerAdminApi(app, { db, config, hub });
     await registerChatApi(app, { db, config, hub });
     registerStatsApi(app, { db, config });
+    registerDownloadApi(app, { db, config });
+
+    // Publication automatique des horaires non publiés 20 min avant l'heure officielle (pas pendant les tests)
+    if (config.NODE_ENV !== 'test') {
+        const stop = startAutoPublisher({
+            db, hub, offsetHours: config.LOCAL_OFFSET_HOURS,
+            log: (msg, err) => (err ? app.log.warn({ err }, msg) : app.log.info(msg))
+        });
+        app.addHook('onClose', async () => stop());
+    }
 
     // Tableau de bord : fichiers statiques + retour sur index.html pour les routes du client
     if (existsSync(WEB_DIST)) {

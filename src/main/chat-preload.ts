@@ -43,11 +43,15 @@ contextBridge.exposeInMainWorld('psStore', {
 // Choix de groupe depuis une carte d'horaires
 contextBridge.exposeInMainWorld('psTeam', {
     choose: (date: string, prayer: string, groupId: number | null) =>
-        ipcRenderer.invoke('team:choose', String(date), String(prayer), groupId === null ? null : Number(groupId))
+        ipcRenderer.invoke('team:choose', String(date), String(prayer), groupId === null ? null : Number(groupId)),
+    /** Écran de choix : l'utilisateur ne prie pas avec un groupe pour cette prière */
+    dismissChoice: (date: string, prayer: string) => ipcRenderer.invoke('team:dismissChoice', String(date), String(prayer))
 });
 
 // Discussion : retours { ok, value } / { ok: false, message } (la clé reste dans le processus principal)
 contextBridge.exposeInMainWorld('psChat', {
+    /** Ferme la discussion ancrée à droite de la fenêtre principale */
+    closeDock: () => ipcRenderer.invoke('chat:closeDock'),
     channels: () => ipcRenderer.invoke('chat:channels'),
     messages: (channel: string, before?: number | null) => ipcRenderer.invoke('chat:messages', String(channel), before ?? null),
     post: (channel: string, body: string, kind?: 'TEXT' | 'ANNOUNCEMENT', replyToId?: number | null) =>

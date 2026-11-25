@@ -56,15 +56,16 @@ L'application fonctionne aussi **seule**, sans rejoindre d'équipe : tout le sui
 1. **Journée** : saisissez l'heure d'arrivée, démarrez et terminez vos pauses. Pause calcule la pause disponible et l'heure de sortie selon les règles de la journée (réglables, mode Ramadan inclus).
 2. **Rappel personnel** : dans le bandeau de prière, choisissez l'heure du rappel. Le rappel couvre tout l'écran ; son message se règle dans **Réglages › Prière**.
 3. **Rejoindre une équipe** : panneau « Prière en groupe » › **Rejoindre**, puis le code d'accès donné par l'admin (ex. `K7P-2QW`) et votre prénom. Le code détermine votre catégorie (Hommes, Femmes…).
-4. **Choisir son groupe** : dès que les horaires du jour sont publiés, touchez un groupe (G1 12:26). Le chiffre indique combien de personnes y sont inscrites. Vous pouvez changer d'avis jusqu'à l'heure du groupe. **« Choisir G1 chaque jour »** en fait votre groupe habituel.
+4. **Choisir son groupe** : dès que les horaires du jour sont publiés, un écran **« Avec quel groupe priez-vous ? »** couvre tous les moniteurs tant que vous n'avez pas de groupe. Touchez un groupe, ou **« Je ne prie pas avec un groupe »** pour le fermer. Il ne s'affiche pas si votre groupe habituel est publié, ni pendant une pause. Vous pouvez aussi choisir dans le panneau d'équipe (G1 12:26). Le chiffre indique combien de personnes y sont inscrites. Vous pouvez changer d'avis jusqu'à l'heure du groupe. **« Choisir G1 chaque jour »** en fait votre groupe habituel.
 5. **Rappel de groupe** : il s'affiche 5 minutes avant l'heure de votre groupe et remplace votre rappel personnel pour cette prière. Hors ligne, les derniers horaires reçus restent utilisés.
 6. **Vendredi** : dans une catégorie où Jumu'a est activée, Dhuhr est remplacée par un créneau unique de Jumu'a.
-7. **Discussion** : bouton « Discussion » du panneau d'équipe. Réponses, `@mentions`, réactions (👍 ❤️ 🤲 ✅ 😂 😮). Notifications Windows pour les horaires publiés ou modifiés, les mentions et les annonces (désactivables dans **Réglages › Prière en groupe**).
+7. **Discussion** : bouton « Discussion » du panneau d'équipe ; elle s'ouvre à droite de la fenêtre principale, qui s'élargit (✕ ou Échap pour la refermer). Réponses, `@mentions`, réactions (👍 ❤️ 🤲 ✅ 😂 😮). Notifications Windows pour les horaires publiés ou modifiés, les mentions et les annonces (désactivables dans **Réglages › Prière en groupe**).
 8. **Changer d'ordinateur** : demandez un **code de transfert** à un admin, puis « J'ai un code de transfert » dans le panneau d'équipe.
 
 ### Admin d'équipe, admin de catégorie, responsable horaires
 
 - **Publier les horaires du jour** : depuis l'application (panneau d'équipe) ou le tableau de bord (onglet **Horaires du jour**). Le formulaire est prérempli avec les derniers horaires. Chaque publication crée une carte dans la discussion et prévient les membres.
+- **Publication automatique** : si personne n'a publié une prière **20 minutes avant son heure officielle** (Aladhan, ville de l'équipe), le serveur republie à l'identique la dernière publication de cette prière. Sans publication antérieure : G1 à l'heure officielle, puis un groupe toutes les **10 minutes** (G1, G2). Jumu'a reprend sa dernière heure. Une publication faite par un admin n'est jamais remplacée.
 - **Modifier** un horaire déjà publié : les membres gardent leur choix et sont prévenus (« G2 déplacé à 12:40 ») ; retirer un groupe efface les choix qui le visaient.
 - **Discussion** : publier une **annonce**, supprimer un message, réduire un membre au silence (1 h, 24 h, 7 jours).
 - **Membres** (admin d'équipe) : valider, bloquer, changer de catégorie, donner un rôle, générer un code de transfert, créer un accès au tableau de bord.
@@ -114,12 +115,12 @@ $env:PAUSE_SERVER_URL = "http://127.0.0.1:3100"; npm start
 ### Serveur et tableau de bord
 
 ```bash
-docker run -d --name pause-mysql-dev -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=pause -p 3307:3306 mysql:8.4
+docker run -d --name pause-mysql-dev -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=pause -p 3308:3306 mysql:8.4
 
 cd server
 cp .env.example .env                 # renseignez SUPERADMIN_EMAIL et SUPERADMIN_PASSWORD
 npm ci
-DATABASE_URL=mysql://root:root@localhost:3307/pause npx prisma migrate deploy
+DATABASE_URL=mysql://root:root@localhost:3308/pause npx prisma migrate deploy
 npm run dev                          # API + tableau de bord compilé sur http://localhost:3100
 
 cd web && npm ci && npm run dev      # tableau de bord avec rechargement sur http://localhost:5173
@@ -133,8 +134,8 @@ Détails, modification du schéma et dépannage : [server/README.md](server/READ
 # Base dédiée, vidée à chaque lancement
 docker exec pause-mysql-dev mysql -uroot -proot -e "CREATE DATABASE IF NOT EXISTS pause_test"
 Set-Location "E:\…\server"            # lettre de lecteur en MAJUSCULE, sinon Vitest charge ses modules deux fois
-$env:DATABASE_URL = "mysql://root:root@localhost:3307/pause_test"; npx prisma migrate deploy
-$env:TEST_DATABASE_URL = "mysql://root:root@localhost:3307/pause_test"; npx vitest run
+$env:DATABASE_URL = "mysql://root:root@localhost:3308/pause_test"; npx prisma migrate deploy
+$env:TEST_DATABASE_URL = "mysql://root:root@localhost:3308/pause_test"; npx vitest run
 ```
 
 57 tests : règles métier (jours, Jumu'a, choix de groupe), parcours complet de l'API, discussion et temps réel (vraie connexion WebSocket), statistiques.
@@ -149,8 +150,9 @@ $env:TEST_DATABASE_URL = "mysql://root:root@localhost:3307/pause_test"; npx vite
 2. Coolify : **New Resource › Docker Compose**, ce dépôt, **Base Directory** `/server`.
 3. Domaine du service `app` : `https://pause.8hqi.com`. Variables : `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD` (12 caractères minimum).
 4. **Deploy** : le conteneur applique les migrations, crée le super admin et sert l'API et le tableau de bord.
-5. Connectez-vous sur `https://pause.8hqi.com` et activez la double authentification.
-6. Programmez une sauvegarde de MySQL dans Coolify (**Backups**).
+5. Connectez-vous sur `https://pause.8hqi.com/admin` et activez la double authentification. La racine `https://pause.8hqi.com` est la page d'accueil publique (présentation et installation).
+6. Publiez l'application Windows : **/admin › Application Windows**, déposez `release\Pause-Setup-x.y.z.exe` (envoyé par morceaux de 16 Mo, compatible avec la limite de 100 Mo de Cloudflare). Le lien direct `https://pause.8hqi.com/telecharger/windows` propose toujours la dernière version ; les fichiers sont gardés dans le volume `pause-downloads`. Variante : définir `DESKTOP_DOWNLOAD_URL` (ex. une release GitHub/GitLab) vers laquelle ce lien redirige tant qu'aucun fichier n'a été envoyé.
+7. Programmez une sauvegarde de MySQL dans Coolify (**Backups**).
 
 Guide complet : [server/README.md](server/README.md).
 

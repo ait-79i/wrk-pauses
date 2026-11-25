@@ -1,0 +1,137 @@
+/* Écran « Choisissez votre groupe » : plein écran, mêmes jetons que style.css (Majorelle, nuit de Ramadan). */
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+}
+
+body {
+    overflow: hidden;
+    user-select: none;
+}
+
+.choose {
+    display: grid;
+    place-items: center;
+    width: 100vw;
+    height: 100vh;
+    padding: 24px;
+    box-sizing: border-box;
+    color: #fff;
+    background-color: var(--majorelle-deep);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cg fill='none' stroke='white' stroke-opacity='0.12' stroke-width='1'%3E%3Crect x='15' y='15' width='18' height='18'/%3E%3Crect x='15' y='15' width='18' height='18' transform='rotate(45 24 24)'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+.choose.ramadan-active { background-color: #0f1133; }
+
+.choose-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    width: min(720px, 100%);
+    text-align: center;
+    animation: choose-in 0.35s ease-out both;
+}
+
+.choose-ar {
+    margin: 0;
+    font-family: var(--font-kufi);
+    font-size: clamp(44px, 7vw, 72px);
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--saffron);
+}
+
+.choose-title {
+    margin: 0;
+    font-size: clamp(24px, 3.4vw, 34px);
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.choose-sub {
+    max-width: 46ch;
+    margin: 0 0 10px;
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.choose-groups {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 14px;
+}
+
+.choose-group {
+    display: grid;
+    grid-template-rows: auto auto auto;
+    justify-items: center;
+    gap: 2px;
+    min-width: 150px;
+    padding: 18px 26px;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: 18px;
+    font: inherit;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.choose-group:hover:not(:disabled) {
+    border-color: var(--saffron);
+    background: rgba(255, 255, 255, 0.14);
+    transform: translateY(-2px);
+}
+
+.choose-group:focus-visible { outline: 3px solid var(--saffron); outline-offset: 3px; }
+.choose-group:disabled { opacity: 0.45; cursor: default; transform: none; }
+
+.choose-group-name { font-size: 26px; font-weight: 700; }
+
+.choose-group-time {
+    font-size: 34px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--saffron);
+}
+
+.choose-group-count { font-size: 14px; color: rgba(255, 255, 255, 0.78); }
+
+.choose-error {
+    margin: 0;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-weight: 600;
+    color: #2a0a10;
+    background: #ffd5db;
+}
+
+.choose-error[hidden] { display: none; }
+
+.choose-skip {
+    margin-top: 18px;
+    padding: 12px 22px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 999px;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    background: transparent;
+    cursor: pointer;
+}
+
+.choose-skip:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+.choose-skip:focus-visible { outline: 3px solid var(--saffron); outline-offset: 3px; }
+.choose-skip:disabled { opacity: 0.6; cursor: default; }
+
+@keyframes choose-in { from { opacity: 0; transform: translateY(10px); } }
+
+@media (prefers-reduced-motion: reduce) {
+    .choose-card { animation: none; }
+    .choose-group { transition: none; }
+}

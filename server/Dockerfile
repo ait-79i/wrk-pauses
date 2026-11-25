@@ -30,6 +30,10 @@ COPY --from=build /app/web/dist ./web/dist
 COPY prisma ./prisma
 COPY prisma.config.ts ./
 
+# Installateurs Windows envoyés depuis /admin (volume persistant, voir docker-compose.yml)
+ENV DOWNLOADS_DIR=/app/downloads
+RUN mkdir -p /app/downloads && chown node:node /app/downloads
+
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

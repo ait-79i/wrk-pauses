@@ -3,7 +3,7 @@
 // plein écran sur chaque écran, fenêtre de rappel de prière, récupération des horaires,
 // base d'historique SQLite (fichier), discussion de l'équipe et notifications Windows.
 
-import { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, shell, Display, Notification, powerMonitor } from 'electron';
+import { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, shell, Display, Notification, powerMonitor, WebContentsView, WebContents } from 'electron';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import './shared'; // charge salat-core, day-core, salat-card comme globales
@@ -36,7 +36,15 @@ let mainWindow: BrowserWindow | null = null;
 let historyWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 let alertWindow: BrowserWindow | null = null;
-let chatWindow: BrowserWindow | null = null;
+/** Discussion ancrée à droite de la fenêtre principale (vue isolée, voir chat-preload.ts) */
+let chatView: WebContentsView | null = null;
+/** Largeur du contenu de la fenêtre principale avant l'ouverture de la discussion */
+let widthBeforeDock = 0;
+const CHAT_DOCK_WIDTH = 400;
+const CHAT_DOCK_MIN_HEIGHT = 640;
+/** Écrans « Choisissez votre groupe » (un par moniteur) */
+const chooseWindows = new Map<string, BrowserWindow>();
+let chooseKey: string | null = null;
 // Notifications affichées : gardées en mémoire pour que le clic reste actif
 const liveNotices = new Set<Notification>();
 const pauseWindows = new Map<string, BrowserWindow>(); // idÉcran -> BrowserWindow
@@ -72,6 +80,8 @@ app.whenReady().then(() => {
     // Démarrage du planificateur de synchronisation automatique
     syncManager.startSchedule();
     teamManager.start();
+    setInterval(dispatchChooseScreens, 30_000);
+    dispatchChooseScreens();
     // Sortie de veille : la connexion temps réel est souvent morte sans le savoir
     powerMonitor.on('resume', () => teamManager.reconnectNow());
 
@@ -133,8 +143,12 @@ function createMainWindow(): void {
         e.preventDefault();
         if (mainWindow) mainWindow.hide();
     });
+    mainWindow.on('resize', () => {
+        if (chatView && mainWindow) chatView.setBounds(chatDockBounds());
+    });
     mainWindow.on('closed', () => {
         mainWindow = null;
+        chatView = null;
     });
 }
 
@@ -197,45 +211,89 @@ function updateTrayTooltip(): void {
     tray.setToolTip(unread > 0 ? `Pause — ${unread} message${unread > 1 ? 's' : ''} non lu${unread > 1 ? 's' : ''}` : 'Pause');
 }
 
-// ---------------------------------------------------------------- Discussion de l'équipe (fenêtre)
+// ---------------------------------------------------------------- Discussion de l'équipe (ancrée à droite)
 
+/** Contenus web qui reçoivent les mises à jour : fenêtres + discussion ancrée */
+function allContents(): WebContents[] {
+    const list = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).map((w) => w.webContents);
+    if (chatView && !chatView.webContents.isDestroyed()) list.push(chatView.webContents);
+    return list;
+}
+
+function chatDockBounds(): Electron.Rectangle {
+    const [w, h] = mainWindow!.getContentSize();
+    return { x: Math.max(0, w - CHAT_DOCK_WIDTH), y: 0, width: CHAT_DOCK_WIDTH, height: h };
+}
+
+/** Ouvre la discussion à droite de la fenêtre principale, qui s'élargit d'autant */
 function openChatWindow(channel?: string | null): void {
-    if (chatWindow) {
-        if (chatWindow.isMinimized()) chatWindow.restore();
-        chatWindow.show();
-        chatWindow.focus();
-        if (channel) chatWindow.webContents.send('chat:openChannel', channel);
+    showMainWindow();
+    if (!mainWindow) return;
+    if (chatView) {
+        chatView.webContents.focus();
+        if (channel) chatView.webContents.send('chat:openChannel', channel);
         return;
     }
-    chatWindow = new BrowserWindow({
-        width: 420,
-        height: 640,
-        minWidth: 340,
-        minHeight: 420,
-        title: 'Discussion — Pause',
-        icon: path.join(ROOT_DIR, 'build', 'icon.png'),
-        autoHideMenuBar: true,
-        backgroundColor: store.value('isRamadanMode') ? '#0f1133' : '#f1f2f7',
+    const [w, h] = mainWindow.getContentSize();
+    widthBeforeDock = w;
+    const { workArea } = screen.getDisplayMatching(mainWindow.getBounds());
+    const frameH = mainWindow.getSize()[1] - h;
+    const targetH = Math.min(Math.max(h, CHAT_DOCK_MIN_HEIGHT), workArea.height - frameH);
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    mainWindow.setContentSize(w + CHAT_DOCK_WIDTH, targetH);
+    // Reste à l'écran : décale vers la gauche ou le haut si la fenêtre élargie déborde
+    const b = mainWindow.getBounds();
+    const overflowX = b.x + b.width - (workArea.x + workArea.width);
+    const overflowY = b.y + b.height - (workArea.y + workArea.height);
+    if (overflowX > 0 || overflowY > 0) {
+        mainWindow.setPosition(Math.max(workArea.x, b.x - Math.max(0, overflowX)), Math.max(workArea.y, b.y - Math.max(0, overflowY)));
+    }
+
+    chatView = new WebContentsView({
         webPreferences: {
-            // Seule fenêtre qui affiche le texte d'autres personnes : isolée, pont réduit (chat-preload.ts)
+            // Seule vue qui affiche le texte d'autres personnes : isolée, pont réduit (chat-preload.ts)
             preload: path.join(__dirname, 'chat-preload.js'),
             contextIsolation: true,
             sandbox: true,
             nodeIntegration: false
         }
     });
-    chatWindow.setMenuBarVisibility(false);
-    chatWindow.loadFile(path.join(RENDERER, 'chat.html'), channel ? { query: { channel } } : undefined);
-    chatWindow.on('closed', () => {
-        chatWindow = null;
+    chatView.setBackgroundColor(store.value('isRamadanMode') ? '#0f1133' : '#f1f2f7');
+    mainWindow.contentView.addChildView(chatView);
+    chatView.setBounds(chatDockBounds());
+    const query: Record<string, string> = { docked: '1' };
+    if (channel) query.channel = channel;
+    chatView.webContents.loadFile(path.join(RENDERER, 'chat.html'), { query });
+    chatView.webContents.on('render-process-gone', () => closeChatDock());
+    // Sous Windows, une vue ajoutée pendant le redimensionnement reste « masquée » (rien n'est peint)
+    // tant que sa visibilité n'a pas changé : on la rebascule une fois la page chargée, puis on lui donne le focus.
+    chatView.webContents.once('did-finish-load', () => {
+        if (!chatView || !mainWindow) return;
+        chatView.setBounds(chatDockBounds());
+        chatView.setVisible(false);
+        chatView.setVisible(true);
+        chatView.webContents.focus();
     });
+    mainWindow.webContents.send('chat:docked', true);
+}
+
+/** Ferme la discussion ancrée et rend sa largeur à la fenêtre principale */
+function closeChatDock(): void {
+    const view = chatView;
+    if (!view) return;
+    chatView = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.contentView.removeChildView(view);
+        const [, h] = mainWindow.getContentSize();
+        mainWindow.setContentSize(Math.max(360, widthBeforeDock || 480), h);
+        mainWindow.webContents.send('chat:docked', false);
+    }
+    if (!view.webContents.isDestroyed()) view.webContents.close();
 }
 
 /** Évènements temps réel relayés aux fenêtres (discussion, panneau d'équipe) */
 function broadcastTeamEvent(event: unknown): void {
-    for (const w of BrowserWindow.getAllWindows()) {
-        if (!w.isDestroyed()) w.webContents.send('team:event', event);
-    }
+    for (const c of allContents()) c.send('team:event', event);
 }
 
 function showTeamNotice(n: TeamNotice): void {
@@ -418,6 +476,90 @@ function dispatchAlert(): void {
     });
 }
 
+// ---------------------------------------------------------------- Écran « Choisissez votre groupe » (tous les moniteurs)
+
+/**
+ * Prière qui attend un choix : horaires publiés aujourd'hui, aucun groupe (ni choisi, ni habituel),
+ * au moins un groupe encore à venir, et l'utilisateur ne l'a pas écartée. Jamais pendant une pause.
+ */
+function pendingGroupChoice(): { date: string; prayer: string } | null {
+    const team = store.value('team') as { status?: string } | null | undefined;
+    const day = store.value('teamDay') as any;
+    if (!team || team.status !== 'ACTIVE' || !day || day.date !== global.moroccoDateKey()) return null;
+    if (Boolean(store.value('isPaused'))) return null;
+    const nowMins = Math.floor(global.moroccoNowSecs() / 60);
+    const dismissed = (store.value('teamChoiceDismissed') as string[] | undefined) ?? [];
+    for (const p of day.prayers ?? []) {
+        if (!p.published || p.prayer === 'JUMUA') continue;
+        if (p.myGroupId != null || p.myChoiceIsExplicit) continue;
+        if (!p.slots?.some((s: { timeMins: number }) => s.timeMins > nowMins)) continue;
+        if (dismissed.includes(`${day.date}|${p.prayer}`)) continue;
+        return { date: day.date, prayer: p.prayer };
+    }
+    return null;
+}
+
+function openChooseWindowOn(display: Display, pending: { date: string; prayer: string }): BrowserWindow {
+    const b = display.bounds;
+    const win = new BrowserWindow({
+        x: b.x,
+        y: b.y,
+        width: b.width,
+        height: b.height,
+        frame: false,
+        fullscreen: true,
+        kiosk: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        title: 'Choisissez votre groupe',
+        backgroundColor: store.value('isRamadanMode') ? '#0f1133' : '#2a2c93',
+        webPreferences: {
+            // Affiche des noms de groupes venus du serveur : même isolation que la discussion
+            preload: path.join(__dirname, 'chat-preload.js'),
+            contextIsolation: true,
+            sandbox: true,
+            nodeIntegration: false
+        }
+    });
+    win.setAlwaysOnTop(true, 'screen-saver');
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    win.loadFile(path.join(RENDERER, 'choose.html'), { query: { date: pending.date, prayer: pending.prayer } });
+    // Sécurité : un écran bloquant qui ne s'affiche pas ne doit jamais rester en place
+    const giveUp = () => { if (!win.isDestroyed()) win.destroy(); };
+    win.webContents.on('render-process-gone', giveUp);
+    win.webContents.on('did-fail-load', giveUp);
+    win.on('leave-full-screen', () => { if (!win.isDestroyed() && chooseKey) win.setFullScreen(true); });
+    return win;
+}
+
+function closeChooseScreens(): void {
+    chooseKey = null;
+    for (const win of chooseWindows.values()) if (!win.isDestroyed()) win.destroy();
+    chooseWindows.clear();
+}
+
+/** Ouvre ou ferme l'écran de choix selon l'état du jour (à chaque changement et toutes les 30 s) */
+function dispatchChooseScreens(): void {
+    const pending = pendingGroupChoice();
+    if (!pending) return closeChooseScreens();
+    const key = `${pending.date}|${pending.prayer}`;
+    if (chooseKey !== key) closeChooseScreens();
+    chooseKey = key;
+    const seen = new Set<string>();
+    for (const d of screen.getAllDisplays()) {
+        const id = String(d.id);
+        seen.add(id);
+        const existing = chooseWindows.get(id);
+        if (!existing || existing.isDestroyed()) chooseWindows.set(id, openChooseWindowOn(d, pending));
+    }
+    for (const [id, win] of [...chooseWindows]) {
+        if (!seen.has(id)) {
+            if (!win.isDestroyed()) win.destroy();
+            chooseWindows.delete(id);
+        }
+    }
+}
+
 // ---------------------------------------------------------------- Écrans de pause plein écran
 
 function openPauseWindowOn(display: Display): BrowserWindow {
@@ -582,8 +724,9 @@ function stampArrivalOnBootLaunch(): void {
 // ---------------------------------------------------------------- Réactions aux changements d'état
 
 function onStoreChanged(changes: StoreChanges): void {
-    for (const w of BrowserWindow.getAllWindows()) {
-        if (!w.isDestroyed()) w.webContents.send('store-changed', changes);
+    for (const c of allContents()) c.send('store-changed', changes);
+    if (changes.teamDay !== undefined || changes.team !== undefined || changes.isPaused !== undefined || changes.teamChoiceDismissed !== undefined) {
+        dispatchChooseScreens();
     }
 
     if (changes.teamUnread !== undefined) updateTrayTooltip();
@@ -633,7 +776,8 @@ function registerIpc(): void {
         const winH = mainWindow.getSize()[1];
         const [contentW, contentH] = mainWindow.getContentSize();
         const maxContentH = workArea.height - (winH - contentH);
-        const target = Math.min(h, maxContentH);
+        // Discussion ouverte : la fenêtre garde une hauteur confortable pour la conversation
+        const target = Math.min(chatView ? Math.max(h, CHAT_DOCK_MIN_HEIGHT) : h, maxContentH);
         if (target !== contentH) mainWindow.setContentSize(contentW, target);
         // Si la fenêtre déborde en bas de l'écran, on la remonte
         const b = mainWindow.getBounds();
@@ -659,6 +803,13 @@ function registerIpc(): void {
         (Array.isArray(slots) ? slots : []).map((s: any) => ({ groupId: s?.groupId == null ? null : Number(s.groupId), time: String(s?.time ?? '') }))
     )));
     ipcMain.handle('team:openChat', (_e, channel) => { openChatWindow(channel ? String(channel) : null); });
+    ipcMain.handle('chat:closeDock', () => { closeChatDock(); });
+    // Écran de choix : « Je ne prie pas avec un groupe » (mémorisé ici aussi, au cas où le serveur est injoignable)
+    ipcMain.handle('team:dismissChoice', (_e, date, prayer) => {
+        const key = `${String(date)}|${String(prayer)}`;
+        const list = (store.value('teamChoiceDismissed') as string[] | undefined) ?? [];
+        if (!list.includes(key)) store.set({ teamChoiceDismissed: [...list, key].slice(-20) });
+    });
 
     // Discussion : la fenêtre ne voit jamais la clé de l'appareil
     ipcMain.handle('chat:channels', () => teamCall(() => teamManager.channels()));
