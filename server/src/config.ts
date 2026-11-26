@@ -22,6 +22,13 @@ const schema = z.object({
     /** Dossier des installateurs Windows envoyés depuis /admin (volume persistant en production) */
     DOWNLOADS_DIR: z.preprocess(emptyToUndefined, z.string().optional()),
     /**
+     * Projet GitLab public dont les releases contiennent l'installateur (ex. ait-79i/pause), publiées par
+     * .gitlab-ci.yml : la dernière release est proposée automatiquement (site et mises à jour de l'application).
+     */
+    DESKTOP_GITLAB_PROJECT: z.preprocess(emptyToUndefined, z.string().regex(/^[\w.-]+(\/[\w.-]+)+$/, 'DESKTOP_GITLAB_PROJECT attendu au format groupe/projet').optional()),
+    /** Instance GitLab (gitlab.com par défaut) */
+    GITLAB_URL: z.preprocess(emptyToUndefined, z.string().url().default('https://gitlab.com')),
+    /**
      * Dépôt GitHub public dont les releases contiennent l'installateur (ex. ait-79i/wrk-pauses) :
      * la dernière release est proposée automatiquement, sans envoi manuel depuis /admin.
      */

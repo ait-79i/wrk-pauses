@@ -1,7 +1,8 @@
 // Téléchargement de l'application Windows : envoi par morceaux depuis /admin, lien direct public.
 
 import type { FastifyInstance } from 'fastify';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -134,5 +135,72 @@ describe.skipIf(!TEST_DB)('application Windows : dernière release GitHub', () =
         const dl = await app.inject({ method: 'GET', url: '/telecharger/windows' });
         expect(dl.statusCode).toBe(302);
         expect(dl.headers.location).toBe('https://github.com/demo/pause/releases/download/v1.0.5/Pause-Setup-1.0.5.exe');
+    });
+});
+
+describe.skipIf(!TEST_DB)('application Windows : release GitLab et mises à jour', () => {
+    let app: FastifyInstance;
+    let db: Db;
+    let dir = '';
+    const realFetch = globalThis.fetch;
+    const pkg = 'https://gitlab.com/api/v4/projects/1/packages/generic/pause/1.0.7';
+    const yml = 'version: 1.0.7\nfiles:\n  - url: Pause-Setup-1.0.7.exe\n    sha512: abc\n    size: 124000000\npath: Pause-Setup-1.0.7.exe\n';
+
+    beforeAll(async () => {
+        const { clearReleaseCache } = await import('../src/routes/download-api.js');
+        clearReleaseCache();
+        dir = mkdtempSync(join(tmpdir(), 'pause-downloads-gl-'));
+        globalThis.fetch = (async (url: string | URL) => {
+            const u = String(url);
+            if (u.includes('/projects/demo%2Fpause/releases/permalink/latest')) {
+                return new Response(JSON.stringify({
+                    released_at: '2026-11-26T09:00:00Z',
+                    assets: { links: [
+                        { name: 'Pause-Setup-1.0.7.exe', url: `${pkg}/Pause-Setup-1.0.7.exe` },
+                        { name: 'Pause-Setup-1.0.7.exe.blockmap', url: `${pkg}/Pause-Setup-1.0.7.exe.blockmap` },
+                        { name: 'latest.yml', url: `${pkg}/latest.yml` }
+                    ] }
+                }), { status: 200, headers: { 'content-type': 'application/json' } });
+            }
+            if (u === `${pkg}/latest.yml`) return new Response(yml, { status: 200 });
+            return realFetch(url);
+        }) as typeof fetch;
+        const config = loadConfig({ ...process.env, DATABASE_URL: TEST_DB!, NODE_ENV: 'test', DOWNLOADS_DIR: dir, DESKTOP_GITLAB_PROJECT: 'demo/pause' });
+        db = createDb(config.DATABASE_URL);
+        app = await buildApp(db, config);
+    });
+
+    afterAll(async () => {
+        globalThis.fetch = realFetch;
+        await app?.close();
+        await db?.$disconnect();
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('propose la release GitLab : site, lien direct et mises à jour de l\'application', async () => {
+        expect((await app.inject({ method: 'GET', url: '/api/download/windows' })).json())
+            .toMatchObject({ available: true, version: '1.0.7', sizeBytes: 124000000, source: 'gitlab' });
+        const dl = await app.inject({ method: 'GET', url: '/telecharger/windows' });
+        expect(dl.statusCode).toBe(302);
+        expect(dl.headers.location).toBe(`${pkg}/Pause-Setup-1.0.7.exe`);
+
+        const latest = await app.inject({ method: 'GET', url: '/mises-a-jour/latest.yml' });
+        expect(latest.statusCode).toBe(200);
+        expect(latest.body).toBe(yml);
+        const blockmap = await app.inject({ method: 'GET', url: '/mises-a-jour/Pause-Setup-1.0.7.exe.blockmap' });
+        expect(blockmap.headers.location).toBe(`${pkg}/Pause-Setup-1.0.7.exe.blockmap`);
+        expect((await app.inject({ method: 'GET', url: '/mises-a-jour/autre.exe' })).statusCode).toBe(404);
+    });
+
+    it('un installateur envoyé depuis /admin, plus récent, devient la source avec son latest.yml calculé', async () => {
+        const exe = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(4096, 1)]);
+        writeFileSync(join(dir, 'Pause-Setup-1.0.8.exe'), exe);
+        const latest = await app.inject({ method: 'GET', url: '/mises-a-jour/latest.yml' });
+        const sha = createHash('sha512').update(exe).digest('base64');
+        expect(latest.body).toContain('version: 1.0.8');
+        expect(latest.body).toContain(`sha512: ${sha}`);
+        expect(latest.body).toContain(`size: ${exe.length}`);
+        const file = await app.inject({ method: 'GET', url: '/mises-a-jour/Pause-Setup-1.0.8.exe' });
+        expect(file.rawPayload.equals(exe)).toBe(true);
     });
 });

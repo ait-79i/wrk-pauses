@@ -14,7 +14,9 @@ services:
       - SUPERADMIN_EMAIL=${SUPERADMIN_EMAIL}
       - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD}
       - LOCAL_OFFSET_HOURS=${LOCAL_OFFSET_HOURS:-0}
-      # Dernière release GitHub proposée automatiquement (repo public) ; vide pour désactiver
+      # Dernière release GitLab proposée automatiquement (site + mises à jour de l'application) ; vide pour désactiver
+      - DESKTOP_GITLAB_PROJECT=${DESKTOP_GITLAB_PROJECT:-ait-79i/pause}
+      # Ancienne source GitHub, gardée pendant la transition (la version la plus récente l'emporte)
       - DESKTOP_GITHUB_REPO=${DESKTOP_GITHUB_REPO:-ait-79i/wrk-pauses}
       # Facultatif : lien vers l'installateur si aucun fichier n'a été envoyé depuis /admin
       - DESKTOP_DOWNLOAD_URL=${DESKTOP_DOWNLOAD_URL:-}

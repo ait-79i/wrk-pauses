@@ -64,10 +64,9 @@
     },
     "publish": [
       {
-        "provider": "github",
-        "owner": "ait-79i",
-        "repo": "wrk-pauses",
-        "releaseType": "release"
+        "provider": "generic",
+        "url": "https://pause.8hqi.com/mises-a-jour",
+        "channel": "latest"
       }
     ]
   }

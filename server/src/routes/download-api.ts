@@ -1,11 +1,16 @@
-// Téléchargement de l'application Windows.
-// - GET /telecharger/windows : lien direct public vers le dernier installateur (fichier envoyé depuis /admin,
-//   sinon redirection vers DESKTOP_DOWNLOAD_URL).
-// - GET /api/download/windows : version, taille et date, pour la page d'accueil et /admin.
+// Téléchargement et mises à jour de l'application Windows.
+// - GET /telecharger/windows : lien direct public vers le dernier installateur.
+// - GET /api/download/windows : version, taille et date (page d'accueil, /admin).
+// - GET /mises-a-jour/latest.yml et /mises-a-jour/<fichier> : source des mises à jour automatiques
+//   de l'application (electron-updater, fournisseur « generic »).
 // - PUT /api/admin/desktop-installer : envoi par morceaux (super admin). Morceaux de 20 Mo au plus :
 //   Cloudflare refuse les corps de plus de 100 Mo, l'installateur en fait davantage.
+//
+// La dernière version est la plus récente parmi : fichier envoyé depuis /admin, release GitLab
+// (DESKTOP_GITLAB_PROJECT), release GitHub (DESKTOP_GITHUB_REPO).
 
 import type { FastifyInstance } from 'fastify';
+import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, open, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -27,6 +32,7 @@ export const CHUNK_MAX_BYTES = 20 * 1024 * 1024;
 const INSTALLER_MAX_BYTES = 400 * 1024 * 1024;
 /** Versions conservées sur le serveur (la plus récente est servie) */
 const KEEP_VERSIONS = 2;
+const REMOTE_TTL_MS = 10 * 60_000;
 
 export interface InstallerInfo {
     file: string;
@@ -45,7 +51,7 @@ const compareVersions = (a: string, b: string): number => {
     return 0;
 };
 
-/** Installateurs présents, du plus récent au plus ancien */
+/** Installateurs envoyés depuis /admin, du plus récent au plus ancien */
 export async function listInstallers(dir: string): Promise<InstallerInfo[]> {
     let names: string[];
     try {
@@ -63,72 +69,164 @@ export async function listInstallers(dir: string): Promise<InstallerInfo[]> {
     return found.sort((a, b) => compareVersions(b.version, a.version));
 }
 
-/** Version proposée au téléchargement : fichier envoyé depuis /admin, ou dernière release GitHub */
-interface Candidate {
-    source: 'local' | 'github';
+// ---------------------------------------------------------------- Versions publiées
+
+type Source = 'local' | 'gitlab' | 'github';
+
+/** Version disponible et ses fichiers (installateur, blockmap, latest.yml) */
+interface Release {
+    source: Source;
     version: string;
+    installer: string;
     sizeBytes: number | null;
     updatedAt: string | null;
-    /** Fichier local (source « local ») ou adresse de l'asset (source « github ») */
-    file?: string;
-    url?: string;
+    /** Adresse publique de chaque fichier de la release (sources distantes) */
+    assets: Map<string, string>;
+    /** Contenu de latest.yml (sources distantes) */
+    latestYml: string | null;
 }
 
-const GITHUB_TTL_MS = 10 * 60_000;
-let githubCache: { at: number; repo: string; value: Candidate | null } | null = null;
+const SOURCE_RANK: Record<Source, number> = { local: 0, gitlab: 1, github: 2 };
+const remoteCache = new Map<string, { at: number; value: Release | null }>();
+let localYmlCache: { key: string; yml: string } | null = null;
 
-/** Vide le cache GitHub (tests) */
-export const clearGithubCache = (): void => { githubCache = null; };
+/** Vide les caches (tests) */
+export const clearReleaseCache = (): void => { remoteCache.clear(); localYmlCache = null; };
+/** Ancien nom, gardé pour les tests existants */
+export const clearGithubCache = clearReleaseCache;
+
+/** Taille annoncée dans latest.yml (« size: 123 ») */
+const ymlSize = (yml: string | null): number | null => {
+    const m = yml ? /\bsize:\s*(\d+)/.exec(yml) : null;
+    return m ? Number(m[1]) : null;
+};
+
+async function fetchText(url: string): Promise<string | null> {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000), headers: { 'user-agent': 'pause-server' } });
+    return res.ok ? res.text() : null;
+}
+
+/** Construit une release à partir de ses fichiers ; null si l'installateur manque */
+async function toRelease(source: Source, assets: Map<string, string>, updatedAt: string | null, sizes: Map<string, number>): Promise<Release | null> {
+    const installer = [...assets.keys()].find((n) => INSTALLER_RE.test(n));
+    if (!installer) return null;
+    const ymlUrl = assets.get('latest.yml');
+    const latestYml = ymlUrl ? await fetchText(ymlUrl).catch(() => null) : null;
+    return {
+        source,
+        version: INSTALLER_RE.exec(installer)![1],
+        installer,
+        sizeBytes: sizes.get(installer) ?? ymlSize(latestYml),
+        updatedAt,
+        assets,
+        latestYml
+    };
+}
+
+async function gitlabRelease(baseUrl: string, project: string): Promise<Release | null> {
+    const res = await fetch(`${baseUrl}/api/v4/projects/${encodeURIComponent(project)}/releases/permalink/latest`, {
+        headers: { accept: 'application/json', 'user-agent': 'pause-server' },
+        signal: AbortSignal.timeout(8000)
+    });
+    if (res.status === 404) return null; // aucune release publiée
+    if (!res.ok) throw new Error(`GitLab HTTP ${res.status}`);
+    const release: any = await res.json();
+    const assets = new Map<string, string>();
+    for (const l of release.assets?.links ?? []) assets.set(String(l.name), String(l.url));
+    return toRelease('gitlab', assets, release.released_at ?? release.created_at ?? null, new Map());
+}
+
+async function githubRelease(repo: string): Promise<Release | null> {
+    const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+        headers: { accept: 'application/vnd.github+json', 'user-agent': 'pause-server' },
+        signal: AbortSignal.timeout(8000)
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`GitHub HTTP ${res.status}`);
+    const release: any = await res.json();
+    const assets = new Map<string, string>();
+    const sizes = new Map<string, number>();
+    for (const a of release.assets ?? []) {
+        assets.set(String(a.name), String(a.browser_download_url));
+        if (Number(a.size)) sizes.set(String(a.name), Number(a.size));
+    }
+    return toRelease('github', assets, release.published_at ?? null, sizes);
+}
 
 /**
- * Dernière release GitHub contenant Pause-Setup-<version>.exe. Mise en cache 10 min
- * (limite de 60 appels/h sans jeton) ; en cas d'échec, la dernière valeur connue est gardée.
+ * Release distante mise en cache 10 min (limites d'appels des API) ;
+ * en cas d'échec, la dernière valeur connue est gardée.
  */
-async function githubLatest(repo: string, log: (msg: string, err?: unknown) => void): Promise<Candidate | null> {
-    if (githubCache && githubCache.repo === repo && Date.now() - githubCache.at < GITHUB_TTL_MS) return githubCache.value;
-    let value: Candidate | null = githubCache?.repo === repo ? githubCache.value : null;
+async function cachedRemote(key: string, load: () => Promise<Release | null>, log: (m: string, e?: unknown) => void): Promise<Release | null> {
+    const hit = remoteCache.get(key);
+    if (hit && Date.now() - hit.at < REMOTE_TTL_MS) return hit.value;
+    let value = hit?.value ?? null;
     try {
-        const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
-            headers: { accept: 'application/vnd.github+json', 'user-agent': 'pause-server' },
-            signal: AbortSignal.timeout(8000)
-        });
-        if (res.status === 404) value = null; // aucune release publiée
-        else if (!res.ok) throw new Error(`GitHub HTTP ${res.status}`);
-        else {
-            const release: any = await res.json();
-            const asset = (release.assets ?? []).find((a: any) => INSTALLER_RE.test(String(a.name)));
-            value = asset
-                ? {
-                    source: 'github',
-                    version: INSTALLER_RE.exec(asset.name)![1],
-                    sizeBytes: Number(asset.size) || null,
-                    updatedAt: asset.updated_at ?? release.published_at ?? null,
-                    url: String(asset.browser_download_url)
-                }
-                : null;
-        }
+        value = await load();
     } catch (err) {
-        log('Releases GitHub injoignables : dernière version connue conservée.', err);
+        log(`Releases injoignables (${key}) : dernière version connue conservée.`, err);
     }
-    githubCache = { at: Date.now(), repo, value };
+    remoteCache.set(key, { at: Date.now(), value });
     return value;
 }
+
+async function sha512Base64(path: string): Promise<string> {
+    const hash = createHash('sha512');
+    await pipeline(createReadStream(path), hash);
+    return hash.digest('base64');
+}
+
+/** latest.yml au format electron-builder pour l'installateur envoyé depuis /admin (empreinte calculée une fois) */
+async function localLatestYml(dir: string, info: InstallerInfo): Promise<string> {
+    const key = `${info.file}|${info.sizeBytes}|${info.updatedAt}`;
+    if (localYmlCache?.key === key) return localYmlCache.yml;
+    const sha512 = await sha512Base64(join(dir, info.file));
+    const yml = [
+        `version: ${info.version}`,
+        'files:',
+        `  - url: ${info.file}`,
+        `    sha512: ${sha512}`,
+        `    size: ${info.sizeBytes}`,
+        `path: ${info.file}`,
+        `sha512: ${sha512}`,
+        `releaseDate: '${info.updatedAt}'`,
+        ''
+    ].join('\n');
+    localYmlCache = { key, yml };
+    return yml;
+}
+
+// ---------------------------------------------------------------- Routes
 
 export function registerDownloadApi(app: FastifyInstance, { db, config }: { db: Db; config: Config }): void {
     const dir = config.DOWNLOADS_DIR ?? DEFAULT_DIR;
     const log = (msg: string, err?: unknown) => app.log.warn({ err }, msg);
 
-    /** La version la plus récente entre le fichier envoyé depuis /admin et la dernière release GitHub */
-    async function resolveLatest(): Promise<Candidate | null> {
+    /** La version la plus récente parmi le fichier local et les releases GitLab / GitHub */
+    async function resolveLatest(): Promise<{ release: Release; local?: InstallerInfo } | null> {
         const [local] = await listInstallers(dir);
-        const candidates: Candidate[] = [];
-        if (local) candidates.push({ source: 'local', version: local.version, sizeBytes: local.sizeBytes, updatedAt: local.updatedAt, file: local.file });
-        if (config.DESKTOP_GITHUB_REPO) {
-            const gh = await githubLatest(config.DESKTOP_GITHUB_REPO, log);
-            if (gh) candidates.push(gh);
+        const candidates: { release: Release; local?: InstallerInfo }[] = [];
+        if (local) {
+            candidates.push({
+                local,
+                release: {
+                    source: 'local', version: local.version, installer: local.file, sizeBytes: local.sizeBytes,
+                    updatedAt: local.updatedAt, assets: new Map(), latestYml: null
+                }
+            });
         }
-        // À version égale, le fichier local l'emporte (servi depuis ce site)
-        candidates.sort((a, b) => compareVersions(b.version, a.version) || (a.source === 'local' ? -1 : 1));
+        if (config.DESKTOP_GITLAB_PROJECT) {
+            const project = config.DESKTOP_GITLAB_PROJECT;
+            const r = await cachedRemote(`gitlab:${project}`, () => gitlabRelease(config.GITLAB_URL, project), log);
+            if (r) candidates.push({ release: r });
+        }
+        if (config.DESKTOP_GITHUB_REPO) {
+            const repo = config.DESKTOP_GITHUB_REPO;
+            const r = await cachedRemote(`github:${repo}`, () => githubRelease(repo), log);
+            if (r) candidates.push({ release: r });
+        }
+        candidates.sort((a, b) => compareVersions(b.release.version, a.release.version)
+            || SOURCE_RANK[a.release.source] - SOURCE_RANK[b.release.source]);
         return candidates[0] ?? null;
     }
 
@@ -137,16 +235,17 @@ export function registerDownloadApi(app: FastifyInstance, { db, config }: { db: 
 
     app.get('/telecharger/windows', async (_req, reply) => {
         const latest = await resolveLatest();
-        if (latest?.source === 'local') {
+        if (latest?.local) {
             reply
                 .header('Content-Type', 'application/vnd.microsoft.portable-executable')
-                .header('Content-Disposition', `attachment; filename="${latest.file}"`)
-                .header('Content-Length', String(latest.sizeBytes))
+                .header('Content-Disposition', `attachment; filename="${latest.local.file}"`)
+                .header('Content-Length', String(latest.local.sizeBytes))
                 .header('Cache-Control', 'no-cache');
-            return reply.send(createReadStream(join(dir, latest.file!)));
+            return reply.send(createReadStream(join(dir, latest.local.file)));
         }
-        // Release GitHub : le téléchargement démarre directement depuis GitHub
-        if (latest?.source === 'github') return reply.header('Cache-Control', 'no-cache').redirect(latest.url!, 302);
+        const url = latest?.release.assets.get(latest.release.installer);
+        // Release distante : le téléchargement démarre directement depuis GitLab ou GitHub
+        if (url) return reply.header('Cache-Control', 'no-cache').redirect(url, 302);
         if (config.DESKTOP_DOWNLOAD_URL) return reply.redirect(config.DESKTOP_DOWNLOAD_URL, 302);
         return reply.code(404).type('text/html; charset=utf-8').send(
             '<!doctype html><meta charset="utf-8"><title>Pause</title>' +
@@ -159,15 +258,36 @@ export function registerDownloadApi(app: FastifyInstance, { db, config }: { db: 
     app.get('/api/download/windows', async () => {
         const latest = await resolveLatest();
         if (latest) {
-            return {
-                available: true, url: '/telecharger/windows', version: latest.version, sizeBytes: latest.sizeBytes,
-                updatedAt: latest.updatedAt, external: false, source: latest.source
-            };
+            const r = latest.release;
+            return { available: true, url: '/telecharger/windows', version: r.version, sizeBytes: r.sizeBytes, updatedAt: r.updatedAt, external: false, source: r.source };
         }
         if (config.DESKTOP_DOWNLOAD_URL) {
             return { available: true, url: '/telecharger/windows', version: null, sizeBytes: null, updatedAt: null, external: true, source: 'url' };
         }
         return { available: false, url: '/telecharger/windows', version: null, sizeBytes: null, updatedAt: null, external: false, source: null };
+    });
+
+    // Mises à jour automatiques de l'application installée (electron-updater, fournisseur « generic »)
+    app.get('/mises-a-jour/latest.yml', async (_req, reply) => {
+        const latest = await resolveLatest();
+        const yml = latest?.local ? await localLatestYml(dir, latest.local) : latest?.release.latestYml ?? null;
+        if (!yml) return reply.code(404).type('text/plain; charset=utf-8').send('Aucune version publiée.');
+        return reply.header('Cache-Control', 'no-cache').type('text/yaml; charset=utf-8').send(yml);
+    });
+
+    app.get('/mises-a-jour/:file', async (req, reply) => {
+        const { file } = parse(z.object({ file: z.string().max(120) }), req.params);
+        const latest = await resolveLatest();
+        if (latest?.local && file === latest.local.file) {
+            reply
+                .header('Content-Type', 'application/octet-stream')
+                .header('Content-Length', String(latest.local.sizeBytes));
+            return reply.send(createReadStream(join(dir, latest.local.file)));
+        }
+        // Fichiers de la release distante (installateur, blockmap) : redirection vers leur adresse publique
+        const url = latest?.release.assets.get(file);
+        if (url) return reply.redirect(url, 302);
+        return reply.code(404).type('text/plain; charset=utf-8').send('Fichier introuvable.');
     });
 
     // Envoi par morceaux : offset 0 recommence le fichier ; le dernier morceau publie la nouvelle version

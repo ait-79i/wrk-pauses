@@ -1,0 +1,56 @@
+# Construit l'installateur Windows et publie une release GitLab à chaque tag de version vX.Y.Z.
+# Usage : npm run release:patch (ou release:minor / release:major), qui crée le tag et pousse.
+#
+# Les fichiers (installateur, blockmap, latest.yml) vont dans le registre de paquets génériques du projet ;
+# le site https://pause.8hqi.com les propose au téléchargement et aux mises à jour automatiques.
+# Aucun jeton à créer : CI_JOB_TOKEN suffit pour envoyer les paquets et créer la release.
+
+stages:
+  - release
+
+windows-release:
+  stage: release
+  tags:
+    - saas-windows-medium-amd64
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
+  timeout: 45m
+  variables:
+    GIT_DEPTH: "0"          # historique complet pour les notes de version
+    NODE_MAJOR: "24"
+    PACKAGE_NAME: "pause"
+  script:
+    - $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'
+    # Node.js (dernière version 24.x officielle)
+    - |
+      $index = Invoke-RestMethod https://nodejs.org/dist/index.json
+      $node = ($index | Where-Object { $_.version -like "v$env:NODE_MAJOR.*" } | Select-Object -First 1).version
+      Invoke-WebRequest "https://nodejs.org/dist/$node/node-$node-win-x64.zip" -OutFile node.zip
+      Expand-Archive node.zip -DestinationPath C:\nodejs -Force
+      $env:PATH = "C:\nodejs\node-$node-win-x64;$env:PATH"
+      node --version; npm --version
+    # Le tag doit correspondre à la version de package.json
+    - |
+      $version = (node -p "require('./package.json').version").Trim()
+      if ("v$version" -ne $env:CI_COMMIT_TAG) { throw "Le tag $env:CI_COMMIT_TAG ne correspond pas à package.json ($version)" }
+    - npm ci; if ($LASTEXITCODE) { exit $LASTEXITCODE }
+    - npm run typecheck; if ($LASTEXITCODE) { exit $LASTEXITCODE }
+    - npm run dist; if ($LASTEXITCODE) { exit $LASTEXITCODE }
+    - node scripts/generate-changelog.js; if ($LASTEXITCODE) { exit $LASTEXITCODE }
+    # Envoi des fichiers dans le registre de paquets génériques
+    - |
+      $base = "$env:CI_API_V4_URL/projects/$env:CI_PROJECT_ID/packages/generic/$env:PACKAGE_NAME/$version"
+      $files = @("Pause-Setup-$version.exe", "Pause-Setup-$version.exe.blockmap", "latest.yml")
+      foreach ($f in $files) {
+        curl.exe --fail --silent --show-error --header "JOB-TOKEN: $env:CI_JOB_TOKEN" --upload-file "release\$f" "$base/$f"
+        if ($LASTEXITCODE) { throw "Envoi de $f impossible" }
+      }
+    # Release GitLab avec les liens vers les fichiers
+    - |
+      $notes = if (Test-Path CHANGELOG_RELEASE.md) { Get-Content CHANGELOG_RELEASE.md -Raw -Encoding UTF8 } else { "Pause $version" }
+      $links = $files | ForEach-Object { @{ name = $_; url = "$base/$_"; link_type = if ($_ -like '*.exe') { 'package' } else { 'other' } } }
+      $body = @{ name = "Pause $env:CI_COMMIT_TAG"; tag_name = $env:CI_COMMIT_TAG; description = $notes; assets = @{ links = @($links) } } | ConvertTo-Json -Depth 6
+      Invoke-RestMethod -Method Post -Uri "$env:CI_API_V4_URL/projects/$env:CI_PROJECT_ID/releases" `
+        -Headers @{ 'JOB-TOKEN' = $env:CI_JOB_TOKEN } -ContentType 'application/json; charset=utf-8' `
+        -Body ([Text.Encoding]::UTF8.GetBytes($body)) | Out-Null
+      Write-Host "Release $env:CI_COMMIT_TAG publiée"

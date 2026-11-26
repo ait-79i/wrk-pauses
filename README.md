@@ -158,18 +158,18 @@ Guide complet : [server/README.md](server/README.md).
 
 ### Application Windows
 
-Le workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) compile l'installateur et publie une release GitHub à chaque tag de version :
+Le pipeline [`.gitlab-ci.yml`](.gitlab-ci.yml) (GitLab CI, runner Windows de GitLab.com) compile l'installateur et publie une **release GitLab** à chaque tag de version ; les fichiers vont dans le registre de paquets génériques du projet :
 
 ```bash
-npm run release:patch    # 1.0.1 → 1.0.2, crée le tag et pousse
+npm run release:patch    # 1.0.2 → 1.0.3, crée le tag et pousse sur GitLab (origin)
 ```
 
 Les notes de version sont générées par [`scripts/generate-changelog.js`](scripts/generate-changelog.js) à partir des commits.
 
 **Tout est ensuite automatique** :
-- **Site** : le lien direct `https://pause.8hqi.com/telecharger/windows` (bouton de la page d'accueil) redirige vers l'installateur de la **dernière release GitHub** (`DESKTOP_GITHUB_REPO`, par défaut `ait-79i/wrk-pauses`, vérifiée toutes les 10 min). Aucun envoi manuel ; un fichier envoyé depuis **/admin › Application Windows** reste possible et l'emporte s'il est plus récent.
-- **Application installée** : elle vérifie les releases au démarrage puis toutes les 4 h (`electron-updater`, fichier `latest.yml` de la release), télécharge la nouvelle version en arrière-plan et l'installe à la fermeture ; la notification « Pause x.y.z est prête » permet de redémarrer tout de suite. Menu de la zone de notification : **Rechercher une mise à jour**.
-- Les ordinateurs encore en 1.0.1 (sans mise à jour automatique) doivent installer une fois la version suivante ; ensuite, les mises à jour se font seules.
+- **Site** : le lien direct `https://pause.8hqi.com/telecharger/windows` (bouton de la page d'accueil) redirige vers l'installateur de la **dernière release GitLab** (`DESKTOP_GITLAB_PROJECT`, par défaut `ait-79i/pause`, vérifiée toutes les 10 min). Un fichier envoyé depuis **/admin › Application Windows** reste possible et l'emporte s'il est plus récent.
+- **Application installée** : elle interroge `https://pause.8hqi.com/mises-a-jour/` au démarrage puis toutes les 4 h (`electron-updater`, fournisseur `generic` : le serveur relaie le `latest.yml` et les fichiers de la dernière version), télécharge la nouvelle version en arrière-plan et l'installe à la fermeture ; la notification « Pause x.y.z est prête » permet de redémarrer tout de suite. Menu de la zone de notification : **Rechercher une mise à jour**.
+- Historique : les versions 1.0.0 et 1.0.1 ont été publiées sur GitHub (`ait-79i/wrk-pauses`, remote `github`) et se mettent à jour depuis GitHub ; la 1.0.2, publiée aussi là-bas, les fait passer à la nouvelle source.
 
 ---
 
