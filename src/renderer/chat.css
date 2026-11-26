@@ -175,16 +175,25 @@ body {
 .chat-main {
     position: relative;
     min-height: 0;
+    min-width: 0;
+    overflow: hidden;
 }
 
+/* Défilement vertical seulement : un élément qui dépasse (actions, choix de réaction) ne crée pas de barre horizontale */
 .chat-list {
     display: flex;
     flex-direction: column;
     gap: 6px;
     height: 100%;
     padding: 12px 14px 14px;
+    overflow-x: hidden;
     overflow-y: auto;
     scrollbar-gutter: stable;
+}
+
+.chat-list > * {
+    min-width: 0;
+    max-width: 100%;
 }
 
 .chat-list:focus-visible { outline-offset: -2px; }
