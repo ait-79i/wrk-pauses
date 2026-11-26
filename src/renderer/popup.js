@@ -10,7 +10,6 @@ let workDate = null;          // Journée (YYYY-MM-DD) à laquelle appartiennent
 let salatDay = null;          // { date, times } fourni par le service worker
 let salatError = null;
 let fullscreenPause = true;
-let quickPauseFeedbackTimer = null;
 let targetOut = null;         // Sortie visée (HH:MM) ; null → sortie au plus tôt du règlement
 
 const DAY_KEYS = ['clockIn', 'pauses', 'isPaused', 'pauseStartTime', 'workDate'];
@@ -37,12 +36,6 @@ const workDurationLabel = document.getElementById('workDurationLabel');
 const timerRow = document.getElementById('timerRow');
 const salatRetryBtn = document.getElementById('salatRetry');
 const fullscreenToggleBtn = document.getElementById('fullscreenToggleBtn');
-const quickPauseChips = document.querySelectorAll('#quickPauseChips .quick-chip[data-mins]');
-const customPauseBtn = document.getElementById('customPauseBtn');
-const customPauseForm = document.getElementById('customPauseForm');
-const customMinsInput = document.getElementById('customMinsInput');
-const cancelCustomPauseBtn = document.getElementById('cancelCustomPauseBtn');
-const quickPauseFeedback = document.getElementById('quickPauseFeedback');
 const addManualPauseBtn = document.getElementById('addManualPauseBtn');
 const reminderPicker = createReminderPicker({
     trigger: document.getElementById('reminderTrigger'),
@@ -209,96 +202,12 @@ if (fullscreenToggleBtn) {
     });
 }
 
-// --- AJOUT RAPIDE DE PAUSE (SANS PLEIN ÉCRAN) ---
-
-function showQuickFeedback(text, isError = false) {
-    if (!quickPauseFeedback) return;
-    quickPauseFeedback.textContent = text;
-    quickPauseFeedback.classList.toggle('is-error', isError);
-    quickPauseFeedback.classList.add('is-visible');
-    clearTimeout(quickPauseFeedbackTimer);
-    quickPauseFeedbackTimer = setTimeout(() => {
-        quickPauseFeedback.classList.remove('is-visible');
-    }, 2500);
-}
-
-function addQuickPauseMins(mins) {
-    if (isPaused) {
-        showQuickFeedback("Terminez la pause en cours d'abord", true);
-        return;
-    }
-    if (pauses.length >= MAX_PAUSES) {
-        showQuickFeedback(`Limite de pauses atteinte (${MAX_PAUSES} max)`, true);
-        return;
-    }
-    if (!Number.isFinite(mins) || mins <= 0) {
-        showQuickFeedback("Durée invalide", true);
-        return;
-    }
-
-    const nowSecs = moroccoNowSecs();
-    const endMins = Math.floor(nowSecs / 60);
-    let startMins = endMins - mins;
-    if (startMins < 0) startMins += 1440;
-
-    const startStr = minsToHM(startMins);
-    const endStr = minsToHM(endMins);
-
-    pauses.push({ start: startStr, end: endStr });
-    pauses.sort((a, b) => timeToMins(a.start) - timeToMins(b.start));
-
-    renderHistory();
-    saveData();
-    updateUI();
-    showQuickFeedback(`✓ +${mins} min ajoutée`);
-}
-
-quickPauseChips.forEach((chip) => {
-    chip.addEventListener('click', () => {
-        const mins = parseInt(chip.dataset.mins, 10);
-        if (mins) addQuickPauseMins(mins);
-    });
-});
-
-if (customPauseBtn) {
-    customPauseBtn.addEventListener('click', () => {
-        customPauseForm.hidden = !customPauseForm.hidden;
-        if (!customPauseForm.hidden) {
-            customMinsInput.focus();
-        }
-    });
-}
-
-if (cancelCustomPauseBtn) {
-    cancelCustomPauseBtn.addEventListener('click', () => {
-        customPauseForm.hidden = true;
-    });
-}
-
-if (customPauseForm) {
-    customPauseForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const val = parseInt(customMinsInput.value, 10);
-        if (!val || val <= 0) {
-            showQuickFeedback("Indiquez une durée valide en minutes", true);
-            return;
-        }
-        addQuickPauseMins(val);
-        customMinsInput.value = '';
-        customPauseForm.hidden = true;
-    });
-}
+// --- AJOUT MANUEL D'UNE PAUSE DANS LA LISTE ---
 
 if (addManualPauseBtn) {
     addManualPauseBtn.addEventListener('click', () => {
-        if (isPaused) {
-            showQuickFeedback("Terminez la pause en cours d'abord", true);
-            return;
-        }
-        if (pauses.length >= MAX_PAUSES) {
-            showQuickFeedback(`Limite de pauses atteinte (${MAX_PAUSES} max)`, true);
-            return;
-        }
+        // Le bouton est désactivé dans ces cas (voir updateUI) ; garde-fou
+        if (isPaused || pauses.length >= MAX_PAUSES) return;
         const endMins = Math.floor(moroccoNowSecs() / 60);
         const startMins = Math.max(0, endMins - 15);
         pauses.push({ start: minsToHM(startMins), end: minsToHM(endMins) });
@@ -318,7 +227,6 @@ if (addManualPauseBtn) {
                 startInput.select();
             }
         }
-        showQuickFeedback("✓ Pause ajoutée dans la liste");
     });
 }
 
@@ -349,6 +257,9 @@ function applyModeStyles() {
 
 function applySalatVisibility(show) {
     salatSection.hidden = !show;
+    // « Prière en groupe » suit le même réglage (application Windows seulement : psTeam)
+    const teamPanel = document.getElementById('teamPanel');
+    if (teamPanel && window.psTeam) teamPanel.hidden = !show;
 }
 
 // Application Windows : la fenêtre prend la hauteur du contenu (bandeau prière masqué,
@@ -487,10 +398,13 @@ function updateUI() {
         : `${pad2(Math.floor(diffSecs / 3600))}:${pad2(Math.floor((diffSecs % 3600) / 60))}:${pad2(diffSecs % 60)}`;
 
     // Contrôles d'ajout rapide (désactivés pendant une pause en direct)
-    quickPauseChips.forEach((btn) => { btn.disabled = isPaused; });
-    if (customPauseBtn) customPauseBtn.disabled = isPaused;
-    if (addManualPauseBtn) addManualPauseBtn.disabled = isPaused;
-    if (isPaused && customPauseForm && !customPauseForm.hidden) customPauseForm.hidden = true;
+    // « + Ajouter » : indisponible pendant une pause en direct ou quand la limite de pauses est atteinte
+    if (addManualPauseBtn) {
+        const full = pauses.length >= MAX_PAUSES;
+        addManualPauseBtn.disabled = isPaused || full;
+        addManualPauseBtn.title = isPaused ? 'Terminez la pause en cours d\'abord'
+            : full ? `Limite de pauses atteinte (${MAX_PAUSES} max)` : 'Ajouter une pause à la liste';
+    }
 }
 
 // --- HISTORIQUE (SQLite, via le service worker) ---
